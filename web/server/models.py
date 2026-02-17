@@ -1,0 +1,525 @@
+"""
+Game state models for multiplayer snake games
+"""
+
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Tuple
+import random
+import time
+import math
+
+
+class GameMode(Enum):
+    SURVIVAL = "survival"
+    HIGH_SCORE = "high_score"
+    SINGLE_PLAYER = "single_player"  # New single player practice mode
+
+
+class GameType(Enum):
+    SNAKE_CLASSIC = "snake_classic"
+    SNAKE_3D = "snake_3d"
+
+
+class BarrierDensity(Enum):
+    NONE = "none"
+    SPARSE = "sparse"
+    MODERATE = "moderate"
+    DENSE = "dense"
+
+
+class Direction(Enum):
+    UP = "up"
+    DOWN = "down"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class PlayerState(Enum):
+    WAITING = "waiting"
+    READY = "ready"
+    PLAYING = "playing"
+    DEAD = "dead"
+    SPECTATING = "spectating"
+
+
+@dataclass
+class Position:
+    x: int
+    y: int
+    
+    def to_dict(self):
+        return {"x": self.x, "y": self.y}
+    
+    def __eq__(self, other):
+        if isinstance(other, Position):
+            return self.x == other.x and self.y == other.y
+        return False
+    
+    def __hash__(self):
+        return hash((self.x, self.y))
+
+
+@dataclass
+class Food:
+    position: Position
+    value: int = 1  # Score value
+    health: int = 1  # Hits needed to eat (for multi-pixel animals)
+    max_health: int = 1  # Original health for health bar display
+    color: str = "#FF0000"
+    colors: Dict = field(default_factory=dict)  # Detailed color map
+    food_type: str = "mouse"  # mouse, rabbit, etc.
+    size: int = 1  # Visual size
+    cells: List[Tuple[int, int]] = field(default_factory=list)  # Cell offsets
+    category: str = "small"  # small, medium, large, huge
+    
+    def to_dict(self):
+        return {
+            "position": self.position.to_dict(),
+            "value": self.value,
+            "health": self.health,
+            "max_health": self.max_health,
+            "color": self.color,
+            "colors": self.colors,
+            "type": self.food_type,
+            "size": self.size,
+            "cells": self.cells,
+            "category": self.category
+        }
+    
+    def get_all_positions(self) -> List[Position]:
+        """Get all positions occupied by this food"""
+        positions = []
+        for dx, dy in self.cells:
+            positions.append(Position(self.position.x + dx, self.position.y + dy))
+        return positions
+
+
+@dataclass
+class Wall:
+    """A barrier/wall segment"""
+    position: Position
+    width: int = 1  # In cells
+    height: int = 1  # In cells
+    
+    def to_dict(self):
+        return {
+            "position": self.position.to_dict(),
+            "width": self.width,
+            "height": self.height
+        }
+    
+    def get_all_positions(self) -> List[Position]:
+        """Get all positions occupied by this wall"""
+        positions = []
+        for dx in range(self.width):
+            for dy in range(self.height):
+                positions.append(Position(self.position.x + dx, self.position.y + dy))
+        return positions
+
+
+@dataclass
+class Snake:
+    player_id: int
+    body: List[Position] = field(default_factory=list)
+    direction: Direction = Direction.RIGHT
+    next_direction: Direction = Direction.RIGHT
+    color: str = "#00FF00"
+    alive: bool = True
+    score: int = 0
+    combo: int = 0
+    combo_timer: float = 0
+    
+    def to_dict(self):
+        return {
+            "player_id": self.player_id,
+            "body": [p.to_dict() for p in self.body],
+            "direction": self.direction.value,
+            "color": self.color,
+            "alive": self.alive,
+            "score": self.score,
+            "combo": self.combo
+        }
+
+
+@dataclass
+class Player:
+    id: int
+    name: str
+    websocket: any = None
+    state: PlayerState = PlayerState.WAITING
+    snake: Optional[Snake] = None
+    quadrant: int = 0  # 0-3 for which quadrant they're in
+    death_time: Optional[float] = None
+    rank: int = 0
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "state": self.state.value,
+            "quadrant": self.quadrant,
+            "rank": self.rank,
+            "snake": self.snake.to_dict() if self.snake else None
+        }
+
+
+@dataclass
+class QuadrantBounds:
+    x_min: int
+    x_max: int
+    y_min: int
+    y_max: int
+    
+    def contains(self, pos: Position) -> bool:
+        return (self.x_min <= pos.x < self.x_max and 
+                self.y_min <= pos.y < self.y_max)
+    
+    def to_dict(self):
+        return {
+            "x_min": self.x_min,
+            "x_max": self.x_max,
+            "y_min": self.y_min,
+            "y_max": self.y_max
+        }
+
+
+@dataclass
+class GameState:
+    game_type: GameType = GameType.SNAKE_CLASSIC
+    mode: GameMode = GameMode.SURVIVAL
+    barrier_density: str = "none"  # none, sparse, moderate, dense
+    
+    # Grid settings
+    grid_width: int = 40
+    grid_height: int = 40
+    quadrant_width: int = 20
+    quadrant_height: int = 20
+    
+    # Game state
+    running: bool = False
+    paused: bool = False
+    game_over: bool = False
+    winner_id: Optional[int] = None
+    
+    # Timing
+    start_time: float = 0
+    elapsed_time: float = 0
+    time_limit: float = 180  # 3 minutes for high score mode
+    
+    # Survival mode specifics
+    shrink_interval: float = 30  # Seconds between shrinks
+    shrink_amount: int = 1  # Cells to shrink per interval
+    next_shrink_time: float = 30
+    
+    # High score mode specifics
+    speed_increase_interval: float = 60  # Seconds between speed increases
+    base_speed: float = 100  # ms between moves
+    current_speed: float = 100
+    speed_increase_factor: float = 0.85  # Multiply speed by this
+    
+    # Single player mode specifics
+    single_player_high_score: int = 0
+    
+    # Players and food
+    players: Dict[int, Player] = field(default_factory=dict)
+    foods: Dict[int, List[Food]] = field(default_factory=dict)  # Per quadrant
+    quadrant_bounds: Dict[int, QuadrantBounds] = field(default_factory=dict)
+    walls: Dict[int, List[Wall]] = field(default_factory=dict)  # Per quadrant
+    
+    # Stats
+    alive_count: int = 0
+    
+    def to_dict(self):
+        return {
+            "game_type": self.game_type.value,
+            "mode": self.mode.value,
+            "barrier_density": self.barrier_density,
+            "grid_width": self.grid_width,
+            "grid_height": self.grid_height,
+            "running": self.running,
+            "paused": self.paused,
+            "game_over": self.game_over,
+            "winner_id": self.winner_id,
+            "elapsed_time": self.elapsed_time,
+            "time_limit": self.time_limit,
+            "current_speed": self.current_speed,
+            "players": {pid: p.to_dict() for pid, p in self.players.items()},
+            "foods": {q: [f.to_dict() for f in foods] for q, foods in self.foods.items()},
+            "quadrant_bounds": {q: b.to_dict() for q, b in self.quadrant_bounds.items()},
+            "walls": {q: [w.to_dict() for w in walls] for q, walls in self.walls.items()},
+            "alive_count": self.alive_count,
+            "single_player_high_score": self.single_player_high_score
+        }
+
+
+# Map size configurations (matching pygame version)
+MAP_SIZES = {
+    "small": {
+        "name": "Small",
+        "width": 15,
+        "height": 12,
+        "description": "Tight quarters - Quick games"
+    },
+    "medium": {
+        "name": "Medium",
+        "width": 25,
+        "height": 18,
+        "description": "Balanced gameplay"
+    },
+    "large": {
+        "name": "Large",
+        "width": 35,
+        "height": 22,
+        "description": "Room to roam"
+    },
+    "extra_large": {
+        "name": "Extra Large",
+        "width": 45,
+        "height": 28,
+        "description": "Wide open spaces"
+    }
+}
+
+MAP_SIZE_ORDER = ["small", "medium", "large", "extra_large"]
+
+
+# Barrier configurations
+BARRIER_CONFIGS = {
+    "none": {
+        "name": "None",
+        "description": "Classic mode - No obstacles",
+        "multiplier": 1.0,
+        "wall_count": 0,
+    },
+    "sparse": {
+        "name": "Sparse",
+        "description": "A few scattered walls",
+        "multiplier": 1.25,
+        "wall_count": 4,
+    },
+    "moderate": {
+        "name": "Moderate",
+        "description": "Strategic wall placement",
+        "multiplier": 1.5,
+        "wall_count": 8,
+    },
+    "dense": {
+        "name": "Dense",
+        "description": "Maze-like challenge",
+        "multiplier": 2.0,
+        "wall_count": 12,
+    }
+}
+
+# Comprehensive animal types with shapes and detailed properties
+ANIMAL_TYPES = {
+    # Small animals (1 cell, 1 health)
+    "mouse": {
+        "value": 15, "health": 1, "size": 1, "weight": 25,
+        "colors": {"body": "#A9A9A9", "ear": "#FFB6C1", "tail": "#FFA0A0", "eye": "#000000"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "frog": {
+        "value": 20, "health": 1, "size": 1, "weight": 20,
+        "colors": {"body": "#32CD32", "belly": "#90EE90", "eye": "#FFD700"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "bug": {
+        "value": 10, "health": 1, "size": 1, "weight": 30,
+        "colors": {"body": "#8B4513", "shell": "#A0522D", "legs": "#654321"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "cricket": {
+        "value": 10, "health": 1, "size": 1, "weight": 25,
+        "colors": {"body": "#553723", "legs": "#3C2819"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "worm": {
+        "value": 5, "health": 1, "size": 1, "weight": 35,
+        "colors": {"body": "#FF9696", "segment": "#FF7878"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "butterfly": {
+        "value": 25, "health": 1, "size": 1, "weight": 15,
+        "colors": {"wing1": "#FF69B4", "wing2": "#FFB6C1", "body": "#463228"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "spider": {
+        "value": 15, "health": 1, "size": 1, "weight": 20,
+        "colors": {"body": "#282828", "legs": "#1E1E1E", "eye": "#FF0000"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "bee": {
+        "value": 20, "health": 1, "size": 1, "weight": 18,
+        "colors": {"body": "#FFC832", "stripes": "#281E14", "wings": "#C8DCFF"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    "ladybug": {
+        "value": 15, "health": 1, "size": 1, "weight": 22,
+        "colors": {"shell": "#DC2828", "spots": "#141414", "head": "#1E1E1E"},
+        "cells": [(0, 0)], "category": "small"
+    },
+    
+    # Medium animals (2-3 cells, 2-3 health)
+    "rabbit": {
+        "value": 40, "health": 2, "size": 2, "weight": 12,
+        "colors": {"body": "#DCC8B4", "ear": "#FFB6C1", "nose": "#FF9696", "eye": "#323232"},
+        "cells": [(0, 0), (1, 0)], "category": "medium"
+    },
+    "fish": {
+        "value": 35, "health": 2, "size": 2, "weight": 14,
+        "colors": {"body": "#64B4DC", "scales": "#50A0C8", "fin": "#3C8CB4", "eye": "#1E1E1E"},
+        "cells": [(0, 0), (1, 0)], "category": "medium"
+    },
+    "lizard": {
+        "value": 60, "health": 3, "size": 3, "weight": 10,
+        "colors": {"body": "#3C783C", "belly": "#8CB464", "spots": "#285028", "eye": "#FFC800"},
+        "cells": [(0, 0), (1, 0), (2, 0)], "category": "medium"
+    },
+    "turtle": {
+        "value": 50, "health": 3, "size": 3, "weight": 11,
+        "colors": {"shell": "#50783C", "pattern": "#3C6428", "skin": "#648C50", "eye": "#1E1E1E"},
+        "cells": [(0, 0), (1, 0), (0, 1)], "category": "medium"
+    },
+    "duck": {
+        "value": 55, "health": 3, "size": 3, "weight": 9,
+        "colors": {"body": "#B48C50", "head": "#327832", "beak": "#FFA500", "eye": "#1E1E1E"},
+        "cells": [(0, 0), (1, 0), (2, 0)], "category": "medium"
+    },
+    
+    # Large animals (4-5 cells, 4-5 health)
+    "bird": {
+        "value": 100, "health": 4, "size": 4, "weight": 7,
+        "colors": {"body": "#6495ED", "belly": "#ADD8E6", "wing": "#4169E1", "beak": "#FFA500", "eye": "#1E1E1E"},
+        "cells": [(0, 0), (1, 0), (0, 1), (1, 1)], "category": "large"
+    },
+    "fox": {
+        "value": 120, "health": 4, "size": 4, "weight": 6,
+        "colors": {"body": "#D2691E", "belly": "#FFDCB4", "tail_tip": "#FFFFFF", "eye": "#281E14"},
+        "cells": [(0, 0), (1, 0), (2, 0), (0, 1)], "category": "large"
+    },
+    "wolf": {
+        "value": 150, "health": 5, "size": 5, "weight": 5,
+        "colors": {"body": "#787882", "belly": "#B4B4BE", "muzzle": "#64646E", "eye": "#C8B432"},
+        "cells": [(1, 0), (0, 1), (1, 1), (2, 1), (1, 2)], "category": "large"
+    },
+    "deer": {
+        "value": 130, "health": 4, "size": 4, "weight": 6,
+        "colors": {"body": "#B48C64", "belly": "#DCC8AA", "spots": "#C8A078", "antlers": "#64503C"},
+        "cells": [(0, 0), (0, 1), (0, 2), (0, 3)], "category": "large"
+    },
+    "pig": {
+        "value": 90, "health": 4, "size": 4, "weight": 8,
+        "colors": {"body": "#FFB4B4", "snout": "#FF9696", "eye": "#1E1E1E"},
+        "cells": [(0, 0), (1, 0), (0, 1), (1, 1)], "category": "large"
+    },
+    
+    # Huge animals (6-8 cells, 6-8 health)
+    "tiger": {
+        "value": 250, "health": 6, "size": 6, "weight": 3,
+        "colors": {"body": "#FFA532", "stripes": "#281E14", "belly": "#FFDCB4", "eye": "#C8B432"},
+        "cells": [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)], "category": "huge"
+    },
+    "lion": {
+        "value": 280, "health": 6, "size": 6, "weight": 3,
+        "colors": {"body": "#DCB464", "mane": "#B47832", "belly": "#F0DCB4", "eye": "#967832"},
+        "cells": [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)], "category": "huge"
+    },
+    "bear": {
+        "value": 220, "health": 6, "size": 6, "weight": 4,
+        "colors": {"body": "#644632", "snout": "#8C6446", "belly": "#785A46", "eye": "#1E1914"},
+        "cells": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2)], "category": "huge"
+    },
+    "crocodile": {
+        "value": 200, "health": 6, "size": 6, "weight": 4,
+        "colors": {"body": "#46643C", "belly": "#8CA078", "scales": "#325028", "eye": "#C8C832"},
+        "cells": [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0)], "category": "huge"
+    },
+    "hippo": {
+        "value": 350, "health": 8, "size": 8, "weight": 2,
+        "colors": {"body": "#826E78", "belly": "#B4A0AA", "mouth": "#C896A0", "eye": "#28232A"},
+        "cells": [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)], "category": "huge"
+    },
+    "elephant": {
+        "value": 400, "health": 8, "size": 8, "weight": 1,
+        "colors": {"body": "#8C8C96", "ear": "#A08C96", "tusk": "#FFFFF0", "eye": "#322D32"},
+        "cells": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2), (0, 3), (1, 3)], "category": "huge"
+    },
+}
+
+# Weight by category for spawn probability
+CATEGORY_WEIGHTS = {
+    "small": 50,
+    "medium": 30,
+    "large": 15,
+    "huge": 5
+}
+
+
+def get_random_food() -> dict:
+    """Get a random food type based on weighted probability"""
+    # First select category
+    category_total = sum(CATEGORY_WEIGHTS.values())
+    r = random.randint(1, category_total)
+    cumulative = 0
+    selected_category = "small"
+    
+    for cat, weight in CATEGORY_WEIGHTS.items():
+        cumulative += weight
+        if r <= cumulative:
+            selected_category = cat
+            break
+    
+    # Then select animal from category
+    category_animals = [
+        (name, data) for name, data in ANIMAL_TYPES.items() 
+        if data["category"] == selected_category
+    ]
+    
+    if not category_animals:
+        # Fallback to any
+        category_animals = list(ANIMAL_TYPES.items())
+    
+    total_weight = sum(a[1]["weight"] for a in category_animals)
+    r = random.randint(1, total_weight)
+    cumulative = 0
+    
+    for name, data in category_animals:
+        cumulative += data["weight"]
+        if r <= cumulative:
+            return {
+                "type": name,
+                "value": data["value"],
+                "health": data["health"],
+                "max_health": data["health"],
+                "color": data["colors"]["body"],
+                "colors": data["colors"],
+                "size": data["size"],
+                "cells": data["cells"].copy(),
+                "category": data["category"]
+            }
+    
+    # Fallback
+    name = "mouse"
+    data = ANIMAL_TYPES[name]
+    return {
+        "type": name,
+        "value": data["value"],
+        "health": data["health"],
+        "max_health": data["health"],
+        "color": data["colors"]["body"],
+        "colors": data["colors"],
+        "size": data["size"],
+        "cells": data["cells"].copy(),
+        "category": data["category"]
+    }
+
+
+# Player colors
+PLAYER_COLORS = [
+    "#3498DB",  # Blue
+    "#E74C3C",  # Red
+    "#2ECC71",  # Green
+    "#F1C40F",  # Yellow
+]

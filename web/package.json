@@ -1,0 +1,17 @@
+{
+  "name": "snake-multiplayer-web",
+  "version": "0.2.0",
+  "description": "Web-based multiplayer Snake games with PixiJS",
+  "type": "module",
+  "scripts": {
+    "server": "cd .. && python -m web.server.main",
+    "dev": "cd .. && python -m web.server.main"
+  },
+  "dependencies": {
+    "pixi.js": "^7.3.2"
+  },
+  "devDependencies": {},
+  "keywords": ["snake", "multiplayer", "pixijs", "websocket"],
+  "author": "",
+  "license": "MIT"
+}
