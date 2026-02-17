@@ -1,0 +1,37 @@
+{
+  "name": "hi",
+  "created": "2026-02-11T07:13:40.916096",
+  "story_progress": {
+    "current_level": 6,
+    "highest_level": 6,
+    "total_score": 3142,
+    "levels_completed": {
+      "1": {
+        "best_score": 640,
+        "completed_at": "2026-02-11T20:47:24.657623"
+      },
+      "2": {
+        "best_score": 494,
+        "completed_at": "2026-02-11T20:47:56.005033"
+      },
+      "3": {
+        "best_score": 604,
+        "completed_at": "2026-02-11T20:48:35.154137"
+      },
+      "4": {
+        "best_score": 544,
+        "completed_at": "2026-02-11T20:49:41.244270"
+      },
+      "5": {
+        "best_score": 860,
+        "completed_at": "2026-02-11T20:50:27.444141"
+      }
+    }
+  },
+  "stats": {
+    "games_played": 36,
+    "total_food_eaten": 26,
+    "total_deaths": 12,
+    "best_sandbox_score": 565
+  }
+}

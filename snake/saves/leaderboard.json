@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "name": "TestPlayer",
+      "score": 1626,
+      "map_size": "large",
+      "barriers": "moderate",
+      "date": "2026-02-11T18:48:51.690391"
+    },
+    {
+      "name": "ss7",
+      "score": 1564,
+      "map_size": "large",
+      "barriers": "moderate",
+      "date": "2026-02-10T23:44:53.242055"
+    },
+    {
+      "name": "ss7",
+      "score": 1146,
+      "map_size": "large",
+      "barriers": "moderate",
+      "date": "2026-02-10T23:43:20.644066"
+    },
+    {
+      "name": "hi",
+      "score": 565,
+      "map_size": "large",
+      "barriers": "none",
+      "date": "2026-02-11T20:55:10.031660"
+    },
+    {
+      "name": "ss7",
+      "score": 563,
+      "map_size": "medium",
+      "barriers": "sparse",
+      "date": "2026-02-10T23:32:22.893912"
+    },
+    {
+      "name": "hi",
+      "score": 470,
+      "map_size": "large",
+      "barriers": "dense",
+      "date": "2026-02-11T20:55:57.369124"
+    },
+    {
+      "name": "testnn",
+      "score": 370,
+      "map_size": "extra_large",
+      "barriers": "none",
+      "date": "2026-02-10T22:57:43.393498"
+    },
+    {
+      "name": "ss7",
+      "score": 363,
+      "map_size": "medium",
+      "barriers": "sparse",
+      "date": "2026-02-11T21:11:35.188986"
+    },
+    {
+      "name": "ss7",
+      "score": 330,
+      "map_size": "small",
+      "barriers": "dense",
+      "date": "2026-02-10T22:20:20.127965"
+    },
+    {
+      "name": "hi",
+      "score": 260,
+      "map_size": "large",
+      "barriers": "moderate",
+      "date": "2026-02-11T20:56:57.318273"
+    }
+  ]
+}

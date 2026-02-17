@@ -1,0 +1,29 @@
+{
+  "name": "TestPlayer",
+  "created": "2026-02-10T23:29:49.939179",
+  "story_progress": {
+    "current_level": 4,
+    "highest_level": 4,
+    "total_score": 1604,
+    "levels_completed": {
+      "1": {
+        "best_score": 523,
+        "completed_at": "2026-02-11T18:42:55.526439"
+      },
+      "2": {
+        "best_score": 317,
+        "completed_at": "2026-02-11T18:43:57.218008"
+      },
+      "3": {
+        "best_score": 764,
+        "completed_at": "2026-02-11T18:45:58.302663"
+      }
+    }
+  },
+  "stats": {
+    "games_played": 65,
+    "total_food_eaten": 15,
+    "total_deaths": 58,
+    "best_sandbox_score": 1626
+  }
+}

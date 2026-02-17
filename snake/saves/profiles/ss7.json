@@ -1,0 +1,85 @@
+{
+  "name": "ss7",
+  "created": "2026-02-10T22:13:40.821302",
+  "story_progress": {
+    "current_level": 18,
+    "highest_level": 18,
+    "total_score": 9334,
+    "levels_completed": {
+      "1": {
+        "best_score": 130,
+        "completed_at": "2026-02-10T22:14:24.246711"
+      },
+      "2": {
+        "best_score": 155,
+        "completed_at": "2026-02-10T22:14:45.291045"
+      },
+      "3": {
+        "best_score": 227,
+        "completed_at": "2026-02-10T22:15:10.606165"
+      },
+      "4": {
+        "best_score": 268,
+        "completed_at": "2026-02-10T22:15:30.122107"
+      },
+      "5": {
+        "best_score": 331,
+        "completed_at": "2026-02-10T22:15:50.143032"
+      },
+      "6": {
+        "best_score": 370,
+        "completed_at": "2026-02-10T22:16:13.698119"
+      },
+      "7": {
+        "best_score": 404,
+        "completed_at": "2026-02-10T22:16:31.710660"
+      },
+      "8": {
+        "best_score": 472,
+        "completed_at": "2026-02-10T22:16:48.602401"
+      },
+      "9": {
+        "best_score": 522,
+        "completed_at": "2026-02-10T22:17:12.525932"
+      },
+      "10": {
+        "best_score": 626,
+        "completed_at": "2026-02-10T22:17:31.041654"
+      },
+      "11": {
+        "best_score": 664,
+        "completed_at": "2026-02-10T22:18:05.803953"
+      },
+      "12": {
+        "best_score": 714,
+        "completed_at": "2026-02-10T22:18:36.783530"
+      },
+      "13": {
+        "best_score": 771,
+        "completed_at": "2026-02-10T22:19:03.371093"
+      },
+      "14": {
+        "best_score": 825,
+        "completed_at": "2026-02-10T22:19:22.162402"
+      },
+      "15": {
+        "best_score": 872,
+        "completed_at": "2026-02-10T22:19:41.083687"
+      },
+      "16": {
+        "best_score": 962,
+        "completed_at": "2026-02-10T22:31:29.017453"
+      },
+      "17": {
+        "best_score": 1021,
+        "completed_at": "2026-02-10T22:31:57.910439"
+      }
+    }
+  },
+  "stats": {
+    "games_played": 43,
+    "total_food_eaten": 109,
+    "total_deaths": 2,
+    "best_sandbox_score": 1564
+  }
+}

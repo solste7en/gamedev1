@@ -1,0 +1,16 @@
+{
+  "name": "testnn",
+  "created": "2026-02-10T22:53:06.063371",
+  "story_progress": {
+    "current_level": 1,
+    "highest_level": 1,
+    "total_score": 0,
+    "levels_completed": {}
+  },
+  "stats": {
+    "games_played": 5,
+    "total_food_eaten": 0,
+    "total_deaths": 0,
+    "best_sandbox_score": 370
+  }
+}
