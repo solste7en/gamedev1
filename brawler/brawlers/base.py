@@ -79,6 +79,7 @@ class Brawler:
         self.alive = True
         self.respawn_timer = 0
         self.invincible_timer = 0
+        self.has_ball = False  # Whether carrying the ball
         
         # Jump state (for Edgar and Piper supers)
         self.jumping = False
@@ -417,3 +418,32 @@ class Brawler:
         Check if super ability is ready.
         """
         return self.super_charge >= SUPER_CHARGE_MAX
+    
+    def pick_up_ball(self):
+        """
+        Called when this brawler picks up the ball.
+        """
+        self.has_ball = True
+    
+    def drop_ball(self):
+        """
+        Called when this brawler drops the ball.
+        """
+        self.has_ball = False
+    
+    @property
+    def is_invulnerable(self):
+        """
+        Check if brawler is currently invulnerable (respawn protection or jumping).
+        """
+        return self.invincible_timer > 0 or self.jumping
+    
+    def set_spawn_position(self, x, y):
+        """
+        Set the spawn position for this brawler.
+        
+        Args:
+            x, y: New spawn coordinates
+        """
+        self.spawn_x = x
+        self.spawn_y = y

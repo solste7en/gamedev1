@@ -262,10 +262,13 @@ class Menu:
         
         # VS in middle
         vs_text = self.font_title.render("VS", True, GRAY)
-        vs_rect = vs_text.get_rect(center=(WINDOW_WIDTH // 2, panel_y + panel_height // 2))
+        vs_rect = vs_text.get_rect(center=(WINDOW_WIDTH // 2, panel_y + 80))
         surface.blit(vs_text, vs_rect)
         
-        # Controls hint
+        # Game controls box in center
+        self._draw_game_controls(surface, panel_y + 140)
+        
+        # Selection controls hint at bottom
         if self.selected_game_mode == '2p':
             hint1 = "P1: A/D to select, SPACE to confirm"
             hint2 = "P2: LEFT/RIGHT to select, ENTER to confirm"
@@ -416,6 +419,72 @@ class Menu:
         fill_width = int(bar_width * (value / max_val))
         pygame.draw.rect(surface, (100, 180, 100),
                         (bar_x, y + 2, fill_width, bar_height), border_radius=3)
+    
+    def _draw_game_controls(self, surface, y):
+        """Draw game controls information box in center of screen."""
+        box_width = 220
+        box_height = 200
+        box_x = (WINDOW_WIDTH - box_width) // 2
+        
+        # Box background
+        pygame.draw.rect(surface, (25, 30, 35), 
+                        (box_x, y, box_width, box_height), border_radius=10)
+        pygame.draw.rect(surface, (60, 70, 80),
+                        (box_x, y, box_width, box_height), 2, border_radius=10)
+        
+        # Title
+        title = self.font_medium.render("GAME CONTROLS", True, WHITE)
+        title_rect = title.get_rect(centerx=WINDOW_WIDTH // 2, y=y + 10)
+        surface.blit(title, title_rect)
+        
+        # Player 1 controls
+        p1_title = self.font_small.render("Player 1 (Blue)", True, TEAM_BLUE)
+        surface.blit(p1_title, (box_x + 15, y + 45))
+        
+        p1_controls = [
+            "WASD - Move",
+            "SPACE - Attack / Kick",
+            "E - Super Ability"
+        ]
+        
+        ctrl_y = y + 68
+        for ctrl in p1_controls:
+            ctrl_text = self.font_small.render(ctrl, True, (180, 180, 180))
+            surface.blit(ctrl_text, (box_x + 20, ctrl_y))
+            ctrl_y += 18
+        
+        # Player 2 controls (only show in 2P mode)
+        if self.selected_game_mode == '2p':
+            p2_title = self.font_small.render("Player 2 (Red)", True, TEAM_RED)
+            surface.blit(p2_title, (box_x + 15, y + 130))
+            
+            p2_controls = [
+                "Arrows - Move",
+                "ENTER - Attack / Kick",
+                "R.SHIFT - Super Ability"
+            ]
+            
+            ctrl_y = y + 153
+            for ctrl in p2_controls:
+                ctrl_text = self.font_small.render(ctrl, True, (180, 180, 180))
+                surface.blit(ctrl_text, (box_x + 20, ctrl_y))
+                ctrl_y += 18
+        else:
+            # AI mode - show general tips
+            ai_text = self.font_small.render("VS AI Mode", True, TEAM_RED)
+            surface.blit(ai_text, (box_x + 15, y + 130))
+            
+            tips = [
+                "Score goals to win!",
+                "First to 2 goals wins",
+                "P to pause"
+            ]
+            
+            ctrl_y = y + 153
+            for tip in tips:
+                tip_text = self.font_small.render(tip, True, (150, 150, 150))
+                surface.blit(tip_text, (box_x + 20, ctrl_y))
+                ctrl_y += 18
     
     def reset(self):
         """Reset menu to initial state."""

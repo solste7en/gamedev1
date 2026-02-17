@@ -50,6 +50,39 @@ class Ball:
         """Check if ball is being carried."""
         return self.carrier is not None
     
+    def is_moving(self):
+        """Check if ball is currently moving."""
+        return self.vx != 0 or self.vy != 0
+    
+    def get_speed(self):
+        """Get current ball speed."""
+        return math.sqrt(self.vx * self.vx + self.vy * self.vy)
+    
+    def try_pickup(self, brawler):
+        """
+        Try to have a brawler pick up the ball.
+        
+        Args:
+            brawler: Brawler attempting pickup
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.carrier is not None:
+            return False
+        
+        if not brawler.alive:
+            return False
+        
+        dx = self.x - brawler.x
+        dy = self.y - brawler.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        
+        if dist < BALL_PICKUP_RANGE + brawler.radius:
+            self.pickup(brawler)
+            return True
+        return False
+    
     def update(self, dt, arena, brawlers):
         """
         Update ball physics.
