@@ -120,6 +120,29 @@ export class InputManager {
     }
     
     /**
+     * Set up game controls for brawler (WASD movement, E for ability)
+     * Note: Mouse controls are handled directly in BrawlerGame.js
+     */
+    setupBrawlerControls(callbacks) {
+        const { onMove, onAbility } = callbacks;
+        
+        // WASD for movement
+        if (onMove) {
+            this.on('w', (state) => onMove('y', state === 'down' ? -1 : 0));
+            this.on('s', (state) => onMove('y', state === 'down' ? 1 : 0));
+            this.on('a', (state) => onMove('x', state === 'down' ? -1 : 0));
+            this.on('d', (state) => onMove('x', state === 'down' ? 1 : 0));
+        }
+        
+        // E for ability
+        if (onAbility) {
+            this.on('e', (state) => {
+                if (state === 'down') onAbility();
+            });
+        }
+    }
+    
+    /**
      * Clear all controls
      */
     clearControls() {

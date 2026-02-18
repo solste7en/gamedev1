@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .models import (
     GameState, GameType, GameMode, Player, PlayerState, Snake, Food, Wall,
     Position, Direction, QuadrantBounds, PLAYER_COLORS, get_random_food,
-    BARRIER_CONFIGS, MAP_SIZES
+    BARRIER_CONFIGS, MAP_SIZES, TIME_LIMIT_OPTIONS
 )
 from .room_manager import Room
 
@@ -79,24 +79,24 @@ class GameManager:
             if is_single_player:
                 player.quadrant = 0
             
-            # Create snake in player's quadrant
-            bounds = self.state.quadrant_bounds[player.quadrant]
-            start_x = (bounds.x_min + bounds.x_max) // 2
-            start_y = (bounds.y_min + bounds.y_max) // 2
-            
-            # Ensure start position is not on a wall
+            # Create snake in player's quadrant with safe spawn position
             wall_positions = self._get_wall_positions(player.quadrant)
-            while (start_x, start_y) in wall_positions or (start_x - 1, start_y) in wall_positions or (start_x - 2, start_y) in wall_positions:
-                start_y += 1
-                if start_y >= bounds.y_max - 2:
-                    start_y = bounds.y_min + 2
-                    start_x += 1
+            start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
+            
+            # Get direction vector for body placement (body is behind head)
+            dir_vectors = {
+                Direction.RIGHT: (1, 0),
+                Direction.LEFT: (-1, 0),
+                Direction.UP: (0, -1),
+                Direction.DOWN: (0, 1)
+            }
+            vx, vy = dir_vectors[direction]
             
             snake = Snake(
                 player_id=player_id,
-                body=[Position(start_x - j, start_y) for j in range(3)],
-                direction=Direction.RIGHT,
-                next_direction=Direction.RIGHT,
+                body=[Position(start_x - vx * j, start_y - vy * j) for j in range(3)],
+                direction=direction,
+                next_direction=direction,
                 color=PLAYER_COLORS[i % len(PLAYER_COLORS)]
             )
             player.snake = snake
@@ -113,6 +113,10 @@ class GameManager:
         # Set mode-specific settings
         if self.state.mode == GameMode.SURVIVAL:
             self.state.next_shrink_time = self.state.shrink_interval
+        elif self.state.mode == GameMode.HIGH_SCORE:
+            # Set time limit based on room settings
+            time_option = TIME_LIMIT_OPTIONS.get(self.room.time_limit, TIME_LIMIT_OPTIONS["1m"])
+            self.state.time_limit = time_option["seconds"]
         elif self.state.mode == GameMode.SINGLE_PLAYER:
             # Single player has no time limit, just practice
             self.state.time_limit = 0  # No limit
@@ -199,6 +203,69 @@ class GameManager:
             for pos in wall.get_all_positions():
                 positions.add((pos.x, pos.y))
         return positions
+    
+    def _find_safe_spawn(self, quadrant: int, wall_positions: Set[Tuple[int, int]]) -> Tuple[int, int, Direction]:
+        """Find a safe spawn position and direction with no walls within 3 spaces ahead"""
+        bounds = self.state.quadrant_bounds.get(quadrant)
+        if not bounds:
+            return (0, 0, Direction.RIGHT)
+        
+        # Start from center
+        center_x = (bounds.x_min + bounds.x_max) // 2
+        center_y = (bounds.y_min + bounds.y_max) // 2
+        
+        # Direction vectors for checking ahead
+        direction_vectors = {
+            Direction.RIGHT: (1, 0),
+            Direction.LEFT: (-1, 0),
+            Direction.UP: (0, -1),
+            Direction.DOWN: (0, 1)
+        }
+        
+        # Try positions in a spiral pattern from center
+        for offset in range(0, max(bounds.x_max - bounds.x_min, bounds.y_max - bounds.y_min)):
+            for dx in range(-offset, offset + 1):
+                for dy in range(-offset, offset + 1):
+                    if abs(dx) != offset and abs(dy) != offset:
+                        continue  # Only check perimeter of spiral
+                    
+                    test_x = center_x + dx
+                    test_y = center_y + dy
+                    
+                    # Check bounds (need space for snake body behind)
+                    if test_x < bounds.x_min + 4 or test_x > bounds.x_max - 4:
+                        continue
+                    if test_y < bounds.y_min + 4 or test_y > bounds.y_max - 4:
+                        continue
+                    
+                    # Try each direction
+                    for direction, (vx, vy) in direction_vectors.items():
+                        # Check if snake body positions are clear
+                        body_clear = True
+                        for j in range(3):
+                            body_x = test_x - vx * j
+                            body_y = test_y - vy * j
+                            if (body_x, body_y) in wall_positions:
+                                body_clear = False
+                                break
+                        
+                        if not body_clear:
+                            continue
+                        
+                        # Check 3 spaces ahead of head
+                        ahead_clear = True
+                        for i in range(1, 4):
+                            ahead_x = test_x + vx * i
+                            ahead_y = test_y + vy * i
+                            if (ahead_x, ahead_y) in wall_positions:
+                                ahead_clear = False
+                                break
+                        
+                        if ahead_clear:
+                            return (test_x, test_y, direction)
+        
+        # Fallback to center facing right (shouldn't happen with reasonable maps)
+        return (center_x, center_y, Direction.RIGHT)
         
     def _setup_quadrants(self, num_players: int):
         """Setup quadrant bounds based on player count"""
@@ -506,12 +573,22 @@ class GameManager:
         if not bounds:
             return
         
-        start_x = (bounds.x_min + bounds.x_max) // 2
-        start_y = (bounds.y_min + bounds.y_max) // 2
+        # Find safe spawn position with no walls in front
+        wall_positions = self._get_wall_positions(player.quadrant)
+        start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
         
-        player.snake.body = [Position(start_x - j, start_y) for j in range(3)]
-        player.snake.direction = Direction.RIGHT
-        player.snake.next_direction = Direction.RIGHT
+        # Get direction vector for body placement
+        dir_vectors = {
+            Direction.RIGHT: (1, 0),
+            Direction.LEFT: (-1, 0),
+            Direction.UP: (0, -1),
+            Direction.DOWN: (0, 1)
+        }
+        vx, vy = dir_vectors[direction]
+        
+        player.snake.body = [Position(start_x - vx * j, start_y - vy * j) for j in range(3)]
+        player.snake.direction = direction
+        player.snake.next_direction = direction
         player.snake.alive = True
         player.snake.combo = 0
         player.state = PlayerState.PLAYING

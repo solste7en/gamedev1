@@ -180,7 +180,7 @@ export class NetworkManager {
         return this.send({ type: 'ready', ready: ready });
     }
     
-    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null) {
+    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null, timeLimit = null) {
         const data = {
             type: 'set_settings',
             game_type: gameType,
@@ -191,6 +191,9 @@ export class NetworkManager {
         }
         if (mapSize) {
             data.map_size = mapSize;
+        }
+        if (timeLimit) {
+            data.time_limit = timeLimit;
         }
         return this.send(data);
     }
@@ -209,6 +212,19 @@ export class NetworkManager {
     
     returnToLobby() {
         return this.send({ type: 'return_to_lobby' });
+    }
+    
+    getLeaderboard() {
+        return this.send({ type: 'get_leaderboard' });
+    }
+    
+    submitScore(playerName, score, gameType) {
+        return this.send({
+            type: 'submit_score',
+            player_name: playerName,
+            score: score,
+            game_type: gameType
+        });
     }
     
     // Game operations

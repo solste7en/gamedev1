@@ -10,6 +10,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from .models import GameType, GameMode
 from .room_manager import RoomManager, Room
 from .game_manager import GameManager
+from .brawler_game_manager import BrawlerGameManager
+from .leaderboard import get_leaderboard_manager
 
 
 class ConnectionManager:
@@ -18,7 +20,8 @@ class ConnectionManager:
     def __init__(self):
         self.room_manager = RoomManager()
         self.active_connections: Dict[int, WebSocket] = {}  # player_id -> websocket
-        self.game_managers: Dict[str, GameManager] = {}  # room_code -> game_manager
+        self.game_managers: Dict[str, GameManager] = {}  # room_code -> snake game_manager
+        self.brawler_game_managers: Dict[str, BrawlerGameManager] = {}  # room_code -> brawler game_manager
     
     async def connect(self, websocket: WebSocket) -> int:
         """Accept a new WebSocket connection"""
@@ -92,6 +95,22 @@ class ConnectionManager:
         
         elif msg_type == "return_to_lobby":
             await self._handle_return_to_lobby(player_id)
+        
+        elif msg_type == "get_leaderboard":
+            await self._handle_get_leaderboard(websocket)
+        
+        elif msg_type == "submit_score":
+            await self._handle_submit_score(websocket, data)
+        
+        # Brawler-specific messages
+        elif msg_type == "select_team":
+            await self._handle_select_team(player_id, data)
+        
+        elif msg_type == "select_character":
+            await self._handle_select_character(player_id, data)
+        
+        elif msg_type == "brawler_input":
+            await self._handle_brawler_input(player_id, data)
         
         return player_id
     
@@ -188,6 +207,7 @@ class ConnectionManager:
         game_mode = None
         barrier_density = None
         map_size = None
+        time_limit = None
         
         if "game_type" in data:
             try:
@@ -207,7 +227,10 @@ class ConnectionManager:
         if "map_size" in data:
             map_size = data["map_size"]
         
-        room = await self.room_manager.set_game_settings(player_id, game_type, game_mode, barrier_density, map_size)
+        if "time_limit" in data:
+            time_limit = data["time_limit"]
+        
+        room = await self.room_manager.set_game_settings(player_id, game_type, game_mode, barrier_density, map_size, time_limit)
         
         if room:
             await self.broadcast_to_room(room.code, {
@@ -242,24 +265,42 @@ class ConnectionManager:
         
         room.game_started = True
         
-        # Create game manager
+        # Create game manager based on game type
         async def broadcast_callback(message):
             await self.broadcast_to_room(room.code, message)
         
-        game_manager = GameManager(room, broadcast_callback)
-        self.game_managers[room.code] = game_manager
-        
-        # Notify players game is starting
-        await self.broadcast_to_room(room.code, {
-            "type": "game_starting",
-            "countdown": 3
-        })
-        
-        # Countdown
-        await asyncio.sleep(3)
-        
-        # Start game
-        game_manager.start()
+        if room.game_type == GameType.BRAWLER:
+            # Brawler game
+            game_manager = BrawlerGameManager(room, broadcast_callback)
+            self.brawler_game_managers[room.code] = game_manager
+            
+            # Notify players game is starting
+            await self.broadcast_to_room(room.code, {
+                "type": "brawler_game_starting",
+                "countdown": 3
+            })
+            
+            # Countdown
+            await asyncio.sleep(3)
+            
+            # Start brawler game
+            game_manager.start()
+        else:
+            # Snake game
+            game_manager = GameManager(room, broadcast_callback)
+            self.game_managers[room.code] = game_manager
+            
+            # Notify players game is starting
+            await self.broadcast_to_room(room.code, {
+                "type": "game_starting",
+                "countdown": 3
+            })
+            
+            # Countdown
+            await asyncio.sleep(3)
+            
+            # Start game
+            game_manager.start()
     
     async def _handle_input(self, player_id: int, data: dict):
         """Handle player input"""
@@ -308,11 +349,17 @@ class ConnectionManager:
         if not room:
             return
         
-        # Clean up game manager if exists
+        # Clean up snake game manager if exists
         if room.code in self.game_managers:
             game_manager = self.game_managers[room.code]
             game_manager.stop()
             del self.game_managers[room.code]
+        
+        # Clean up brawler game manager if exists
+        if room.code in self.brawler_game_managers:
+            game_manager = self.brawler_game_managers[room.code]
+            game_manager.stop()
+            del self.brawler_game_managers[room.code]
         
         # Reset room state for rematch
         room.reset_for_rematch()
@@ -322,6 +369,125 @@ class ConnectionManager:
             "type": "room_reset",
             "room": room.to_dict()
         })
+    
+    async def _handle_get_leaderboard(self, websocket: WebSocket):
+        """Get the leaderboard"""
+        leaderboard = get_leaderboard_manager()
+        await self.send_personal(websocket, {
+            "type": "leaderboard",
+            "entries": leaderboard.get_leaderboard()
+        })
+    
+    async def _handle_submit_score(self, websocket: WebSocket, data: dict):
+        """Submit a score to the leaderboard"""
+        player_name = data.get("player_name", "Unknown")
+        score = data.get("score", 0)
+        game_type = data.get("game_type", "snake_classic")
+        
+        if score <= 0:
+            return
+        
+        leaderboard = get_leaderboard_manager()
+        rank = leaderboard.add_score(player_name, score, game_type)
+        
+        await self.send_personal(websocket, {
+            "type": "score_submitted",
+            "rank": rank,  # None if didn't make leaderboard
+            "leaderboard": leaderboard.get_leaderboard()
+        })
+    
+    # Brawler-specific handlers
+    
+    async def _handle_select_team(self, player_id: int, data: dict):
+        """Handle player team selection for Brawler"""
+        room = self.room_manager.get_player_room(player_id)
+        if not room or room.game_type != GameType.BRAWLER:
+            return
+        
+        team = data.get("team", 0)  # 0 = blue, 1 = red
+        if team not in [0, 1]:
+            return
+        
+        # Count players on each team
+        blue_count = sum(1 for t in room.team_assignments.values() if t == 0)
+        red_count = sum(1 for t in room.team_assignments.values() if t == 1)
+        
+        # Check if team is full (max 2 per team)
+        if team == 0 and blue_count >= 2:
+            ws = self.active_connections.get(player_id)
+            if ws:
+                await self.send_personal(ws, {
+                    "type": "error",
+                    "message": "Blue team is full"
+                })
+            return
+        
+        if team == 1 and red_count >= 2:
+            ws = self.active_connections.get(player_id)
+            if ws:
+                await self.send_personal(ws, {
+                    "type": "error",
+                    "message": "Red team is full"
+                })
+            return
+        
+        room.team_assignments[player_id] = team
+        
+        await self.broadcast_to_room(room.code, {
+            "type": "team_selected",
+            "player_id": player_id,
+            "team": team,
+            "room": room.to_dict()
+        })
+    
+    async def _handle_select_character(self, player_id: int, data: dict):
+        """Handle player character selection for Brawler"""
+        room = self.room_manager.get_player_room(player_id)
+        if not room or room.game_type != GameType.BRAWLER:
+            return
+        
+        character = data.get("character", "colt")
+        valid_chars = ["colt", "shelly", "piper", "edgar"]
+        
+        if character not in valid_chars:
+            return
+        
+        # Check if character is already taken on this team
+        player_team = room.team_assignments.get(player_id, 0)
+        for pid, char in room.character_selections.items():
+            if pid != player_id and char == character:
+                other_team = room.team_assignments.get(pid, 0)
+                if other_team == player_team:
+                    ws = self.active_connections.get(player_id)
+                    if ws:
+                        await self.send_personal(ws, {
+                            "type": "error",
+                            "message": f"{character.capitalize()} is already taken on your team"
+                        })
+                    return
+        
+        room.character_selections[player_id] = character
+        
+        await self.broadcast_to_room(room.code, {
+            "type": "character_selected",
+            "player_id": player_id,
+            "character": character,
+            "room": room.to_dict()
+        })
+    
+    async def _handle_brawler_input(self, player_id: int, data: dict):
+        """Handle player input for Brawler game"""
+        room = self.room_manager.get_player_room(player_id)
+        if not room:
+            return
+        
+        game_manager = self.brawler_game_managers.get(room.code)
+        if not game_manager:
+            return
+        
+        action = data.get("action")  # move, aim, attack, ability
+        if action:
+            game_manager.handle_input(player_id, action, data)
 
 
 # Singleton connection manager

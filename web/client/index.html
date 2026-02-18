@@ -13,15 +13,29 @@
         <!-- Main Menu -->
         <div id="menu-screen" class="screen active">
             <div class="menu-container">
-                <h1 class="game-title">🐍 SNAKE</h1>
-                <h2 class="game-subtitle">MULTIPLAYER</h2>
+                <h1 class="game-title">🎮 GAME HUB</h1>
+                <h2 class="game-subtitle">MULTIPLAYER ARENA</h2>
                 
                 <div class="player-name-section">
                     <label for="player-name">Your Name</label>
                     <input type="text" id="player-name" maxlength="12" placeholder="Enter name...">
                 </div>
                 
-                <div class="menu-buttons">
+                <div class="game-select-section">
+                    <h3>Choose Your Game</h3>
+                    <div class="game-select-buttons">
+                        <button id="btn-snake-game" class="game-select-btn selected">
+                            <span class="game-icon">🐍</span>
+                            <span class="game-name">Snake</span>
+                        </button>
+                        <button id="btn-brawler-game" class="game-select-btn">
+                            <span class="game-icon">⚔️</span>
+                            <span class="game-name">Brawler</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="menu-buttons" id="snake-menu-buttons">
                     <button id="btn-single-player" class="btn btn-success">
                         <span class="btn-icon">🎮</span>
                         Single Player
@@ -38,9 +52,28 @@
                         <span class="btn-icon">🔍</span>
                         Browse Rooms
                     </button>
+                    <button id="btn-leaderboard" class="btn btn-tertiary">
+                        <span class="btn-icon">🏆</span>
+                        Snake Leaderboard
+                    </button>
                 </div>
                 
-                <div class="version-info">v0.2.0</div>
+                <div class="menu-buttons hidden" id="brawler-menu-buttons">
+                    <button id="btn-brawler-create" class="btn btn-primary">
+                        <span class="btn-icon">+</span>
+                        Create Brawler Room
+                    </button>
+                    <button id="btn-brawler-join" class="btn btn-secondary">
+                        <span class="btn-icon">→</span>
+                        Join Room
+                    </button>
+                    <button id="btn-brawler-browse" class="btn btn-tertiary">
+                        <span class="btn-icon">🔍</span>
+                        Browse Rooms
+                    </button>
+                </div>
+                
+                <div class="version-info">v0.3.0</div>
             </div>
         </div>
         
@@ -52,6 +85,19 @@
                 <div class="modal-buttons">
                     <button id="btn-join-confirm" class="btn btn-primary">Join</button>
                     <button id="btn-join-cancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Leaderboard Modal -->
+        <div id="leaderboard-modal" class="modal hidden">
+            <div class="modal-content leaderboard-modal">
+                <h2>🏆 Snake Leaderboard - Top 20</h2>
+                <div id="leaderboard-list" class="leaderboard-list">
+                    <div class="loading">Loading...</div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="btn-leaderboard-close" class="btn btn-secondary">Close</button>
                 </div>
             </div>
         </div>
@@ -84,11 +130,10 @@
                 
                 <div class="lobby-settings" id="lobby-settings">
                     <h3>Game Settings</h3>
-                    <div class="setting-row">
+                    <div class="setting-row" id="snake-game-type-row">
                         <label>Game Type</label>
                         <select id="select-game-type">
                             <option value="snake_classic">Snake Classic</option>
-                            <option value="snake_3d">Snake 3D</option>
                         </select>
                     </div>
                     <div class="setting-row">
@@ -117,6 +162,15 @@
                             <option value="extra_large">Extra Large (45x28)</option>
                         </select>
                     </div>
+                    <div class="setting-row" id="time-limit-row">
+                        <label>Time Limit</label>
+                        <select id="select-time-limit">
+                            <option value="30s">30 Seconds</option>
+                            <option value="1m" selected>1 Minute</option>
+                            <option value="2m">2 Minutes</option>
+                            <option value="3m">3 Minutes</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <div class="player-list" id="player-list">
@@ -134,7 +188,57 @@
                 <div class="lobby-buttons">
                     <button id="btn-ready" class="btn btn-primary">Ready</button>
                     <button id="btn-start-game" class="btn btn-success hidden">Start Game</button>
+                    <button id="btn-lobby-leaderboard" class="btn btn-tertiary">🏆 Snake Leaderboard</button>
                     <button id="btn-leave-room" class="btn btn-danger">Leave</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Brawler Lobby Screen -->
+        <div id="brawler-lobby-screen" class="screen hidden">
+            <div class="lobby-container brawler-lobby">
+                <div class="lobby-header">
+                    <h2>⚔️ Brawler Lobby</h2>
+                    <div class="room-code-display">
+                        <span>Room Code:</span>
+                        <span id="brawler-room-code" class="code">----</span>
+                        <button id="brawler-btn-copy-code" class="btn-icon-small" title="Copy code">📋</button>
+                    </div>
+                </div>
+                
+                <div class="brawler-team-selection">
+                    <h3>Choose Your Team</h3>
+                    <div class="team-buttons">
+                        <button id="team-blue-btn" class="team-btn team-blue">
+                            <span class="team-name">Blue Team</span>
+                            <span id="team-blue-count" class="team-count">0/2</span>
+                        </button>
+                        <span class="vs-text">VS</span>
+                        <button id="team-red-btn" class="team-btn team-red">
+                            <span class="team-name">Red Team</span>
+                            <span id="team-red-count" class="team-count">0/2</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="brawler-character-selection">
+                    <h3>Choose Your Brawler</h3>
+                    <div id="character-grid" class="character-grid">
+                        <!-- Characters will be added dynamically -->
+                    </div>
+                </div>
+                
+                <div class="brawler-player-list-section">
+                    <h3>Players</h3>
+                    <div id="brawler-player-list" class="brawler-player-list">
+                        <!-- Players will be added dynamically -->
+                    </div>
+                </div>
+                
+                <div class="lobby-buttons">
+                    <button id="brawler-btn-ready" class="btn btn-primary" disabled>Ready</button>
+                    <button id="brawler-btn-start" class="btn btn-success hidden">Start Game</button>
+                    <button id="brawler-btn-leave" class="btn btn-danger">Leave</button>
                 </div>
             </div>
         </div>

@@ -27,11 +27,16 @@ class Room:
     game_mode: GameMode = GameMode.SURVIVAL
     barrier_density: str = "none"  # none, sparse, moderate, dense
     map_size: str = "medium"  # small, medium, large, extra_large
+    time_limit: str = "1m"  # 30s, 1m, 2m, 3m (for high score mode)
     players: Dict[int, Player] = field(default_factory=dict)
     max_players: int = 4
     min_players: int = 1  # Changed to 1 to support single player
     created_at: datetime = field(default_factory=datetime.now)
     game_started: bool = False
+    
+    # Brawler-specific fields
+    team_assignments: Dict[int, int] = field(default_factory=dict)  # player_id -> team (0=blue, 1=red)
+    character_selections: Dict[int, str] = field(default_factory=dict)  # player_id -> brawler_type
     
     def add_player(self, player: Player) -> bool:
         """Add a player to the room"""
@@ -87,13 +92,14 @@ class Room:
             player.death_time = None
     
     def to_dict(self):
-        return {
+        result = {
             "code": self.code,
             "host_id": self.host_id,
             "game_type": self.game_type.value,
             "game_mode": self.game_mode.value,
             "barrier_density": self.barrier_density,
             "map_size": self.map_size,
+            "time_limit": self.time_limit,
             "players": [p.to_dict() for p in self.players.values()],
             "max_players": self.max_players,
             "min_players": self.min_players,
@@ -102,6 +108,13 @@ class Room:
             "can_start": self.can_start(),
             "game_started": self.game_started
         }
+        
+        # Add brawler-specific fields if it's a brawler game
+        if self.game_type == GameType.BRAWLER:
+            result["team_assignments"] = self.team_assignments
+            result["character_selections"] = self.character_selections
+        
+        return result
 
 
 class RoomManager:
@@ -224,7 +237,8 @@ class RoomManager:
     async def set_game_settings(self, player_id: int, game_type: Optional[GameType] = None,
                                  game_mode: Optional[GameMode] = None,
                                  barrier_density: Optional[str] = None,
-                                 map_size: Optional[str] = None) -> Optional[Room]:
+                                 map_size: Optional[str] = None,
+                                 time_limit: Optional[str] = None) -> Optional[Room]:
         """Host can change game settings"""
         room = self.get_player_room(player_id)
         if room and room.host_id == player_id and not room.game_started:
@@ -236,5 +250,7 @@ class RoomManager:
                 room.barrier_density = barrier_density
             if map_size and map_size in ["small", "medium", "large", "extra_large"]:
                 room.map_size = map_size
+            if time_limit and time_limit in ["30s", "1m", "2m", "3m"]:
+                room.time_limit = time_limit
             return room
         return None

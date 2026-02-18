@@ -11,6 +11,7 @@ export class Lobby {
         this.isReady = false;
         
         this.onGameStart = null;  // Callback when game starts
+        this.onShowLeaderboard = null;  // Callback to show leaderboard
         
         this.bindElements();
         this.setupEventListeners();
@@ -31,9 +32,12 @@ export class Lobby {
         this.selectGameMode = document.getElementById('select-game-mode');
         this.selectBarrierDensity = document.getElementById('select-barrier-density');
         this.selectMapSize = document.getElementById('select-map-size');
+        this.selectTimeLimit = document.getElementById('select-time-limit');
+        this.timeLimitRow = document.getElementById('time-limit-row');
         
         this.btnReady = document.getElementById('btn-ready');
         this.btnStartGame = document.getElementById('btn-start-game');
+        this.btnLobbyLeaderboard = document.getElementById('btn-lobby-leaderboard');
         this.btnLeaveRoom = document.getElementById('btn-leave-room');
         this.btnCopyCode = document.getElementById('btn-copy-code');
         this.btnSendChat = document.getElementById('btn-send-chat');
@@ -45,6 +49,7 @@ export class Lobby {
     setupEventListeners() {
         this.btnReady.addEventListener('click', () => this.toggleReady());
         this.btnStartGame.addEventListener('click', () => this.startGame());
+        this.btnLobbyLeaderboard.addEventListener('click', () => this.showLeaderboard());
         this.btnLeaveRoom.addEventListener('click', () => this.leaveRoom());
         this.btnCopyCode.addEventListener('click', () => this.copyRoomCode());
         this.btnSendChat.addEventListener('click', () => this.sendChat());
@@ -54,9 +59,13 @@ export class Lobby {
         });
         
         this.selectGameType.addEventListener('change', () => this.updateSettings());
-        this.selectGameMode.addEventListener('change', () => this.updateSettings());
+        this.selectGameMode.addEventListener('change', () => {
+            this.updateSettings();
+            this.updateTimeLimitVisibility();
+        });
         this.selectBarrierDensity.addEventListener('change', () => this.updateSettings());
         this.selectMapSize.addEventListener('change', () => this.updateSettings());
+        this.selectTimeLimit.addEventListener('change', () => this.updateSettings());
     }
     
     /**
@@ -114,6 +123,8 @@ export class Lobby {
         this.selectGameMode.value = this.room.game_mode;
         this.selectBarrierDensity.value = this.room.barrier_density || 'none';
         this.selectMapSize.value = this.room.map_size || 'medium';
+        this.selectTimeLimit.value = this.room.time_limit || '1m';
+        this.updateTimeLimitVisibility();
     }
     
     /**
@@ -166,9 +177,21 @@ export class Lobby {
         this.selectGameMode.disabled = !this.isHost;
         this.selectBarrierDensity.disabled = !this.isHost;
         this.selectMapSize.disabled = !this.isHost;
+        this.selectTimeLimit.disabled = !this.isHost;
         
         // Settings visibility
         this.lobbySettings.style.display = this.isHost ? 'block' : 'none';
+    }
+    
+    /**
+     * Show/hide time limit based on game mode
+     */
+    updateTimeLimitVisibility() {
+        // Only show time limit for high_score mode
+        if (this.timeLimitRow) {
+            this.timeLimitRow.style.display = 
+                this.selectGameMode.value === 'high_score' ? 'flex' : 'none';
+        }
     }
     
     /**
@@ -233,7 +256,8 @@ export class Lobby {
             this.selectGameType.value,
             this.selectGameMode.value,
             this.selectBarrierDensity.value,
-            this.selectMapSize.value
+            this.selectMapSize.value,
+            this.selectTimeLimit.value
         );
     }
     
@@ -251,6 +275,15 @@ export class Lobby {
     leaveRoom() {
         this.network.leaveRoom();
         this.hide();
+    }
+    
+    /**
+     * Show leaderboard from lobby
+     */
+    showLeaderboard() {
+        if (this.onShowLeaderboard) {
+            this.onShowLeaderboard();
+        }
     }
     
     /**

@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-10
+
+### Added
+
+#### Web Brawler Multiplayer
+- Browser-based Brawler game accessible via local network
+- Support for 1-4 players with AI filling empty slots
+- 2v2 Team-based gameplay (Blue vs Red)
+- Team selection UI with player counts
+- Character selection with unique brawler abilities:
+  - **Colt**: Long-range 6-bullet burst, piercing super
+  - **Shelly**: Wide spread pellets, knockback super
+  - **Piper**: Sniper with distance-scaling damage, escape jump super
+  - **Edgar**: Melee assassin with lifesteal, vault jump super
+- Each player must select unique character on their team
+- AI companions automatically fill remaining team slots
+- Full game mechanics including:
+  - Ball pickup and kick controls
+  - Goal scoring with celebration screen
+  - 2-minute match timer with overtime
+  - First to 2 goals wins
+  - Projectile system and damage
+  - Health bars and respawning
+- WASD movement + mouse aiming controls
+- Left-click attack, E key/right-click for ability
+
+#### Game Selection Hub
+- New unified home page for Snake and Brawler games
+- Game selection buttons to toggle between game types
+- Clear labeling that leaderboard is Snake-only
+
+### Changed
+- Removed Snake 3D from web game list (temporary)
+- Updated UI to show "Game Hub" branding
+- Version bumped to 0.3.0
+
+### Technical
+- BrawlerGameManager with 60 FPS game loop
+- AI state machine (chase, attack, defend, score, retreat, support)
+- Team and character selection via WebSocket messages
+- Brawler-specific lobby with team/character UI
+- BrawlerGame.js with PixiJS rendering
+
+---
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
@@ -138,5 +183,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[0.3.0]: https://github.com/username/project/releases/tag/v0.3.0
 [0.2.0]: https://github.com/username/project/releases/tag/v0.2.0
 [0.1.0]: https://github.com/username/project/releases/tag/v0.1.0

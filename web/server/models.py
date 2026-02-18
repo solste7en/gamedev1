@@ -19,6 +19,7 @@ class GameMode(Enum):
 class GameType(Enum):
     SNAKE_CLASSIC = "snake_classic"
     SNAKE_3D = "snake_3d"
+    BRAWLER = "brawler"
 
 
 class BarrierDensity(Enum):
@@ -26,6 +27,17 @@ class BarrierDensity(Enum):
     SPARSE = "sparse"
     MODERATE = "moderate"
     DENSE = "dense"
+
+
+# Time limit options for high score mode (in seconds)
+TIME_LIMIT_OPTIONS = {
+    "30s": {"name": "30 Seconds", "seconds": 30},
+    "1m": {"name": "1 Minute", "seconds": 60},
+    "2m": {"name": "2 Minutes", "seconds": 120},
+    "3m": {"name": "3 Minutes", "seconds": 180}
+}
+TIME_LIMIT_ORDER = ["30s", "1m", "2m", "3m"]
+DEFAULT_TIME_LIMIT = "1m"
 
 
 class Direction(Enum):

@@ -30,10 +30,16 @@ export class Menu {
         this.btnCreateRoom = document.getElementById('btn-create-room');
         this.btnJoinRoom = document.getElementById('btn-join-room');
         this.btnBrowseRooms = document.getElementById('btn-browse-rooms');
+        this.btnLeaderboard = document.getElementById('btn-leaderboard');
         this.btnJoinConfirm = document.getElementById('btn-join-confirm');
         this.btnJoinCancel = document.getElementById('btn-join-cancel');
         this.btnRefreshRooms = document.getElementById('btn-refresh-rooms');
         this.btnBackMenu = document.getElementById('btn-back-menu');
+        
+        // Leaderboard modal
+        this.leaderboardModal = document.getElementById('leaderboard-modal');
+        this.leaderboardList = document.getElementById('leaderboard-list');
+        this.btnLeaderboardClose = document.getElementById('btn-leaderboard-close');
         
         // Lists
         this.roomList = document.getElementById('room-list');
@@ -54,6 +60,10 @@ export class Menu {
         this.btnCreateRoom.addEventListener('click', () => this.createRoom());
         this.btnJoinRoom.addEventListener('click', () => this.showJoinModal());
         this.btnBrowseRooms.addEventListener('click', () => this.showBrowseScreen());
+        this.btnLeaderboard.addEventListener('click', () => this.showLeaderboard());
+        
+        // Leaderboard modal
+        this.btnLeaderboardClose.addEventListener('click', () => this.hideLeaderboard());
         
         // Join modal
         this.btnJoinConfirm.addEventListener('click', () => this.joinRoom());
@@ -240,6 +250,66 @@ export class Menu {
         this.browseScreen.classList.remove('active');
         this.browseScreen.classList.add('hidden');
         this.hideJoinModal();
+        this.hideLeaderboard();
+    }
+    
+    /**
+     * Show leaderboard modal
+     */
+    showLeaderboard() {
+        this.leaderboardModal.classList.remove('hidden');
+        this.leaderboardList.innerHTML = '<div class="loading">Loading...</div>';
+        this.network.getLeaderboard();
+    }
+    
+    /**
+     * Hide leaderboard modal
+     */
+    hideLeaderboard() {
+        this.leaderboardModal.classList.add('hidden');
+    }
+    
+    /**
+     * Update leaderboard display
+     */
+    updateLeaderboard(entries) {
+        if (!entries || entries.length === 0) {
+            this.leaderboardList.innerHTML = '<div class="leaderboard-empty">No scores yet. Be the first!</div>';
+            return;
+        }
+        
+        this.leaderboardList.innerHTML = '';
+        
+        entries.forEach((entry, index) => {
+            const rank = index + 1;
+            const item = document.createElement('div');
+            item.className = 'leaderboard-entry';
+            
+            // Color coding: 1-3 green (gold), 4-10 blue (silver)
+            if (rank <= 3) {
+                item.classList.add('rank-gold');
+            } else if (rank <= 10) {
+                item.classList.add('rank-silver');
+            }
+            
+            item.innerHTML = `
+                <span class="entry-rank">#${rank}</span>
+                <span class="entry-name">${this.escapeHtml(entry.player_name)}</span>
+                <span class="entry-score">${entry.score.toLocaleString()}</span>
+                <span class="entry-date">${entry.date}</span>
+            `;
+            
+            this.leaderboardList.appendChild(item);
+        });
+    }
+    
+    /**
+     * Escape HTML to prevent XSS
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
