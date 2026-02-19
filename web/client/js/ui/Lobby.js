@@ -183,30 +183,48 @@ export class Lobby {
     }
     
     /**
-     * Cycle the icon for an AI bot
+     * Cycle the icon for an AI bot - updates in-place to avoid input cursor loss
      */
-    cycleAIIcon(index) {
+    cycleAIIcon(index, btn) {
         const current = this.aiConfigs[index].icon;
         const idx = AI_ICONS.indexOf(current);
         this.aiConfigs[index].icon = AI_ICONS[(idx + 1) % AI_ICONS.length];
-        this.updatePlayerList();
+        if (btn) btn.textContent = this.aiConfigs[index].icon;
     }
     
     /**
-     * Cycle the difficulty for an AI bot
+     * Cycle the difficulty for an AI bot - updates in-place to avoid input cursor loss
      */
-    cycleAIDifficulty(index) {
+    cycleAIDifficulty(index, btn) {
         const current = this.aiConfigs[index].difficulty;
         const idx = AI_DIFF_LEVELS.indexOf(current);
-        this.aiConfigs[index].difficulty = AI_DIFF_LEVELS[(idx + 1) % AI_DIFF_LEVELS.length];
-        this.updatePlayerList();
+        const next = AI_DIFF_LEVELS[(idx + 1) % AI_DIFF_LEVELS.length];
+        this.aiConfigs[index].difficulty = next;
+        if (btn) {
+            const nextLabel = AI_DIFF_LABELS[next];
+            const nextClass = 'diff-' + next.replace('_', '-');
+            btn.textContent = `↻ ${nextLabel}`;
+            btn.className = `ai-diff-badge ${nextClass}`;
+        }
         this.updateSettings();
     }
     
     /**
-     * Update player list
+     * Update player list.
+     * Preserves focus/cursor of any active AI name input to avoid cursor-jump bugs.
      */
     updatePlayerList() {
+        // Save focus state before wiping DOM
+        const activeEl = document.activeElement;
+        let savedAiIdx = null;
+        let savedSelStart = null;
+        let savedSelEnd = null;
+        if (activeEl && activeEl.classList && activeEl.classList.contains('ai-name-input')) {
+            savedAiIdx = activeEl.dataset.aiIdx;
+            savedSelStart = activeEl.selectionStart;
+            savedSelEnd = activeEl.selectionEnd;
+        }
+        
         this.playerList.innerHTML = '';
         
         const colors = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F'];
@@ -258,8 +276,11 @@ export class Lobby {
                 card.innerHTML = `
                     <button class="ai-icon-btn" title="Click to change icon">${cfg.icon}</button>
                     <div class="player-details">
-                        <input class="ai-name-input" value="${this.escapeHtml(cfg.name)}" maxlength="12" placeholder="Bot name…" />
-                        <button class="ai-diff-badge ${diffClass}" title="Click to change difficulty">${diffLabel} ▶</button>
+                        <input class="ai-name-input" data-ai-idx="${i}" value="${this.escapeHtml(cfg.name)}" maxlength="12" placeholder="Bot name…" />
+                        <div class="ai-skill-row">
+                            <span class="ai-skill-label">Level:</span>
+                            <button class="ai-diff-badge ${diffClass}" title="Click to cycle difficulty">↻ ${diffLabel}</button>
+                        </div>
                     </div>
                 `;
                 
@@ -269,23 +290,34 @@ export class Lobby {
                 
                 // Capture index for closures
                 const idx = i;
-                iconBtn.addEventListener('click', () => this.cycleAIIcon(idx));
+                iconBtn.addEventListener('click', (e) => this.cycleAIIcon(idx, e.currentTarget));
                 nameInput.addEventListener('input', (e) => {
                     this.aiConfigs[idx].name = e.target.value;
-                    this.updateSettings();
+                    // Debounce server sync to avoid round-trip on every keystroke
+                    clearTimeout(this._nameDebounceTimer);
+                    this._nameDebounceTimer = setTimeout(() => this.updateSettings(), 600);
                 });
-                diffBtn.addEventListener('click', () => this.cycleAIDifficulty(idx));
+                diffBtn.addEventListener('click', (e) => this.cycleAIDifficulty(idx, e.currentTarget));
             } else {
                 card.innerHTML = `
                     <div class="player-avatar" style="background-color:#555">${cfg.icon}</div>
                     <div class="player-details">
                         <div class="player-name">${this.escapeHtml(cfg.name)}</div>
-                        <div class="player-status">${diffLabel} · Ready</div>
+                        <div class="player-status ai-status-badge diff-${cfg.difficulty.replace('_','-')}">${diffLabel} · Ready</div>
                     </div>
                 `;
             }
             
             this.playerList.appendChild(card);
+        }
+        
+        // Restore focus to name input if it was active before the re-render
+        if (savedAiIdx !== null) {
+            const newInput = this.playerList.querySelector(`.ai-name-input[data-ai-idx="${savedAiIdx}"]`);
+            if (newInput) {
+                newInput.focus();
+                try { newInput.setSelectionRange(savedSelStart, savedSelEnd); } catch (_) {}
+            }
         }
         
         this.updateStartButton();
@@ -373,13 +405,11 @@ export class Lobby {
             this.btnReady.classList.remove('btn-primary');
             this.btnReady.textContent = this.isSinglePlayer() ? 'Ready (Solo)' : 'Ready (AI Mode)';
         } else {
-            // Normal multiplayer mode - enable ready button
+            // Normal multiplayer mode - enable ready button and always reflect current state
             this.btnReady.disabled = false;
-            if (!this.isReady) {
-                this.btnReady.textContent = 'Ready';
-                this.btnReady.classList.remove('btn-secondary');
-                this.btnReady.classList.add('btn-primary');
-            }
+            this.btnReady.textContent = this.isReady ? 'Not Ready' : 'Ready';
+            this.btnReady.classList.toggle('btn-secondary', this.isReady);
+            this.btnReady.classList.toggle('btn-primary', !this.isReady);
         }
     }
     
@@ -526,6 +556,16 @@ export class Lobby {
         const prevAiCount = this.room ? (this.room.ai_count || 0) : 0;
         this.room = room;
         this.isHost = room.host_id === this.playerId;
+        
+        // Sync local ready state from server data.
+        // This prevents stale state after room_reset (where server sets all players to WAITING)
+        // and avoids the ready button becoming unresponsive.
+        const myServerPlayer = Array.isArray(room.players)
+            ? room.players.find(p => p.id === this.playerId)
+            : (room.players && room.players[this.playerId]);
+        if (myServerPlayer) {
+            this.isReady = myServerPlayer.state === 'ready';
+        }
         
         // Sync ai count selector and aiConfigs from incoming room data
         if (this.selectAICount) {

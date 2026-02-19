@@ -25,7 +25,7 @@ class LeaderboardEntry:
 class LeaderboardManager:
     """Manages the leaderboard with file-based persistence"""
     
-    MAX_ENTRIES = 20
+    MAX_ENTRIES = 500
     
     def __init__(self, data_dir: str = None):
         if data_dir is None:

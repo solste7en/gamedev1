@@ -73,9 +73,20 @@
         <!-- Leaderboard Modal -->
         <div id="leaderboard-modal" class="modal hidden">
             <div class="modal-content leaderboard-modal">
-                <h2>🏆 Snake Leaderboard - Top 20</h2>
+                <h2>🏆 Snake Leaderboard — All Time Top 500</h2>
+                <div class="lb-filter-row">
+                    <label class="lb-toggle-label">
+                        <input type="checkbox" id="lb-unique-toggle" />
+                        <span class="lb-toggle-text">Show best score per player only</span>
+                    </label>
+                </div>
                 <div id="leaderboard-list" class="leaderboard-list">
                     <div class="loading">Loading...</div>
+                </div>
+                <div class="leaderboard-pagination" id="leaderboard-pagination">
+                    <button id="btn-lb-prev" class="btn btn-sm btn-secondary" disabled>◀ Prev</button>
+                    <span id="lb-page-info" class="lb-page-info">Page 1 / 1</span>
+                    <button id="btn-lb-next" class="btn btn-sm btn-secondary" disabled>Next ▶</button>
                 </div>
                 <div class="modal-buttons">
                     <button id="btn-leaderboard-close" class="btn btn-secondary">Close</button>

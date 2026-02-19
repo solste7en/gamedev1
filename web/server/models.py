@@ -65,35 +65,51 @@ class AIDifficulty(Enum):
 AI_DIFFICULTY_SETTINGS = {
     "amateur": {
         "name": "Amateur",
-        "reaction_time": 500,  # ms between decisions
-        "food_seeking": 0.4,   # Probability to seek food vs random
-        "look_ahead": 1,       # How many cells to look ahead for safety
+        "reaction_time": 380,   # ms between decisions
+        "food_seeking": 0.35,   # Probability to seek food vs random
+        "look_ahead": 1,        # How many cells to look ahead for safety
         "deterministic": False, # Use random fallback
-        "dead_end_check": False, # Check for dead ends
+        "dead_end_check": False,# Check for dead ends
+        "flood_fill_depth": 8,  # BFS depth for dead-end detection
+        "dead_end_threshold": 0.2,  # Min fraction of best reachable cells
+        "value_power": 1.0,     # Exponent for food value scoring (higher = prefer big food)
+        "combo_aware": False,   # Whether to prioritize maintaining combos
     },
     "semi_pro": {
         "name": "Semi-Pro",
-        "reaction_time": 250,
-        "food_seeking": 0.85,
+        "reaction_time": 180,
+        "food_seeking": 0.78,
         "look_ahead": 3,
         "deterministic": False,
         "dead_end_check": False,
+        "flood_fill_depth": 12,
+        "dead_end_threshold": 0.3,
+        "value_power": 1.0,
+        "combo_aware": False,
     },
     "pro": {
         "name": "Pro",
-        "reaction_time": 120,
-        "food_seeking": 0.95,
-        "look_ahead": 5,
-        "deterministic": True,  # Always seek food, no random fallback
-        "dead_end_check": True, # Avoid dead ends
+        "reaction_time": 70,   # Faster reaction (was 120)
+        "food_seeking": 0.97,
+        "look_ahead": 8,       # Deeper look-ahead (was 5)
+        "deterministic": True,
+        "dead_end_check": True,
+        "flood_fill_depth": 28,        # Much deeper flood-fill
+        "dead_end_threshold": 0.45,    # Stricter dead-end avoidance
+        "value_power": 1.3,            # Prefer high-value food
+        "combo_aware": True,           # Try to maintain combos in high score mode
     },
     "world_class": {
         "name": "World-Class",
-        "reaction_time": 50,
-        "food_seeking": 1.0,   # Always seek food
-        "look_ahead": 7,
+        "reaction_time": 22,   # Very fast (was 50)
+        "food_seeking": 1.0,
+        "look_ahead": 12,      # Max look-ahead (was 7)
         "deterministic": True,
         "dead_end_check": True,
+        "flood_fill_depth": 50,        # Deep flood-fill for best space evaluation
+        "dead_end_threshold": 0.55,    # Very strict dead-end avoidance
+        "value_power": 1.6,            # Strongly prefer high-value food
+        "combo_aware": True,
     }
 }
 
@@ -118,8 +134,8 @@ class Position:
 @dataclass
 class Food:
     position: Position
-    value: int = 1  # Score value
-    health: int = 1  # Hits needed to eat (for multi-pixel animals)
+    value: int = 1  # Score value (TOTAL kill value; score per hit = value // max_health)
+    health: int = 1  # Hits remaining
     max_health: int = 1  # Original health for health bar display
     color: str = "#FF0000"
     colors: Dict = field(default_factory=dict)  # Detailed color map
@@ -127,6 +143,7 @@ class Food:
     size: int = 1  # Visual size
     cells: List[Tuple[int, int]] = field(default_factory=list)  # Cell offsets
     category: str = "small"  # small, medium, large, huge
+    hit_recovery: float = 0.0  # Seconds until this animal can be hit again (non-consecutive rule)
     
     def to_dict(self):
         return {
@@ -139,7 +156,9 @@ class Food:
             "type": self.food_type,
             "size": self.size,
             "cells": self.cells,
-            "category": self.category
+            "category": self.category,
+            "hit_recovery": round(self.hit_recovery, 2),
+            "recovering": self.hit_recovery > 0,
         }
     
     def get_all_positions(self) -> List[Position]:
@@ -213,9 +232,11 @@ class Player:
     is_ai: bool = False
     ai_difficulty: str = "amateur"  # amateur, semi_pro, pro, world_class
     ai_last_decision: float = 0  # Timestamp of last AI decision
+    death_count: int = 0          # Number of deaths this game (drives respawn penalty)
+    respawn_delay: float = 2.0    # Current respawn delay in seconds (fibonacci-based)
     
     def to_dict(self):
-        return {
+        d = {
             "id": self.id,
             "name": self.name,
             "state": self.state.value,
@@ -223,8 +244,16 @@ class Player:
             "rank": self.rank,
             "snake": self.snake.to_dict() if self.snake else None,
             "is_ai": self.is_ai,
-            "ai_difficulty": self.ai_difficulty
+            "ai_difficulty": self.ai_difficulty,
+            "death_count": self.death_count,
+            "respawn_delay": self.respawn_delay,
         }
+        # Include remaining respawn time so client can display a countdown
+        if self.death_time and self.state == PlayerState.DEAD:
+            d["respawn_remaining"] = max(0.0, round(self.respawn_delay - (time.time() - self.death_time), 1))
+        else:
+            d["respawn_remaining"] = 0.0
+        return d
 
 
 @dataclass
@@ -384,137 +413,152 @@ BARRIER_CONFIGS = {
     }
 }
 
-# Comprehensive animal types with shapes and detailed properties
+# Hit-recovery window per category (seconds between consecutive hits on same animal)
+# Small animals = no recovery (one-shot), larger animals require re-approach
+FOOD_HIT_RECOVERY = {
+    "small":  0.0,   # One-shot, no cooldown
+    "medium": 0.8,   # Must leave and return after 0.8s
+    "large":  1.5,   # Meaningful re-approach required
+    "huge":   2.5,   # Significant tactical gap needed
+}
+
+# Comprehensive animal types with shapes and detailed properties.
+# Scoring philosophy (Hybrid A+B):
+#   - Small animals: high base value (rewarding precision) — one-shot kill, full points immediately
+#   - Multi-health animals: score awarded PER HIT (value // max_health per hit), not on full kill
+#   - Non-consecutive hits enforced via hit_recovery window — must leave and re-approach
+#   - Huge animals health capped at 5 (was 6-8)
 ANIMAL_TYPES = {
-    # Small animals (1 cell, 1 health)
+    # Small animals (1 cell, 1 health) — high value, one-shot, full points instantly
     "mouse": {
-        "value": 15, "health": 1, "size": 1, "weight": 25,
+        "value": 75, "health": 1, "size": 1, "weight": 25,
         "colors": {"body": "#A9A9A9", "ear": "#FFB6C1", "tail": "#FFA0A0", "eye": "#000000"},
         "cells": [(0, 0)], "category": "small"
     },
     "frog": {
-        "value": 20, "health": 1, "size": 1, "weight": 20,
+        "value": 85, "health": 1, "size": 1, "weight": 20,
         "colors": {"body": "#32CD32", "belly": "#90EE90", "eye": "#FFD700"},
         "cells": [(0, 0)], "category": "small"
     },
     "bug": {
-        "value": 10, "health": 1, "size": 1, "weight": 30,
+        "value": 65, "health": 1, "size": 1, "weight": 30,
         "colors": {"body": "#8B4513", "shell": "#A0522D", "legs": "#654321"},
         "cells": [(0, 0)], "category": "small"
     },
     "cricket": {
-        "value": 10, "health": 1, "size": 1, "weight": 25,
+        "value": 65, "health": 1, "size": 1, "weight": 25,
         "colors": {"body": "#553723", "legs": "#3C2819"},
         "cells": [(0, 0)], "category": "small"
     },
     "worm": {
-        "value": 5, "health": 1, "size": 1, "weight": 35,
+        "value": 60, "health": 1, "size": 1, "weight": 35,
         "colors": {"body": "#FF9696", "segment": "#FF7878"},
         "cells": [(0, 0)], "category": "small"
     },
     "butterfly": {
-        "value": 25, "health": 1, "size": 1, "weight": 15,
+        "value": 100, "health": 1, "size": 1, "weight": 15,
         "colors": {"wing1": "#FF69B4", "wing2": "#FFB6C1", "body": "#463228"},
         "cells": [(0, 0)], "category": "small"
     },
     "spider": {
-        "value": 15, "health": 1, "size": 1, "weight": 20,
+        "value": 70, "health": 1, "size": 1, "weight": 20,
         "colors": {"body": "#282828", "legs": "#1E1E1E", "eye": "#FF0000"},
         "cells": [(0, 0)], "category": "small"
     },
     "bee": {
-        "value": 20, "health": 1, "size": 1, "weight": 18,
+        "value": 80, "health": 1, "size": 1, "weight": 18,
         "colors": {"body": "#FFC832", "stripes": "#281E14", "wings": "#C8DCFF"},
         "cells": [(0, 0)], "category": "small"
     },
     "ladybug": {
-        "value": 15, "health": 1, "size": 1, "weight": 22,
+        "value": 70, "health": 1, "size": 1, "weight": 22,
         "colors": {"shell": "#DC2828", "spots": "#141414", "head": "#1E1E1E"},
         "cells": [(0, 0)], "category": "small"
     },
     
-    # Medium animals (2-3 cells, 2-3 health)
+    # Medium animals (2-3 cells, 2-3 health) — score per hit (value // max_health), 0.8s recovery
+    # Total per kill: stated value spread across hits
     "rabbit": {
-        "value": 40, "health": 2, "size": 2, "weight": 12,
+        "value": 90, "health": 2, "size": 2, "weight": 12,   # 45 pts/hit × 2
         "colors": {"body": "#DCC8B4", "ear": "#FFB6C1", "nose": "#FF9696", "eye": "#323232"},
         "cells": [(0, 0), (1, 0)], "category": "medium"
     },
     "fish": {
-        "value": 35, "health": 2, "size": 2, "weight": 14,
+        "value": 80, "health": 2, "size": 2, "weight": 14,   # 40 pts/hit × 2
         "colors": {"body": "#64B4DC", "scales": "#50A0C8", "fin": "#3C8CB4", "eye": "#1E1E1E"},
         "cells": [(0, 0), (1, 0)], "category": "medium"
     },
     "lizard": {
-        "value": 60, "health": 3, "size": 3, "weight": 10,
+        "value": 120, "health": 3, "size": 3, "weight": 10,  # 40 pts/hit × 3
         "colors": {"body": "#3C783C", "belly": "#8CB464", "spots": "#285028", "eye": "#FFC800"},
         "cells": [(0, 0), (1, 0), (2, 0)], "category": "medium"
     },
     "turtle": {
-        "value": 50, "health": 3, "size": 3, "weight": 11,
+        "value": 105, "health": 3, "size": 3, "weight": 11,  # 35 pts/hit × 3
         "colors": {"shell": "#50783C", "pattern": "#3C6428", "skin": "#648C50", "eye": "#1E1E1E"},
         "cells": [(0, 0), (1, 0), (0, 1)], "category": "medium"
     },
     "duck": {
-        "value": 55, "health": 3, "size": 3, "weight": 9,
+        "value": 120, "health": 3, "size": 3, "weight": 9,   # 40 pts/hit × 3
         "colors": {"body": "#B48C50", "head": "#327832", "beak": "#FFA500", "eye": "#1E1E1E"},
         "cells": [(0, 0), (1, 0), (2, 0)], "category": "medium"
     },
     
-    # Large animals (4-5 cells, 4-5 health)
+    # Large animals (4-5 cells, 4-5 health) — 40pts/hit, 1.5s recovery
     "bird": {
-        "value": 100, "health": 4, "size": 4, "weight": 7,
+        "value": 160, "health": 4, "size": 4, "weight": 7,   # 40 pts/hit × 4
         "colors": {"body": "#6495ED", "belly": "#ADD8E6", "wing": "#4169E1", "beak": "#FFA500", "eye": "#1E1E1E"},
         "cells": [(0, 0), (1, 0), (0, 1), (1, 1)], "category": "large"
     },
     "fox": {
-        "value": 120, "health": 4, "size": 4, "weight": 6,
+        "value": 180, "health": 4, "size": 4, "weight": 6,   # 45 pts/hit × 4
         "colors": {"body": "#D2691E", "belly": "#FFDCB4", "tail_tip": "#FFFFFF", "eye": "#281E14"},
         "cells": [(0, 0), (1, 0), (2, 0), (0, 1)], "category": "large"
     },
     "wolf": {
-        "value": 150, "health": 5, "size": 5, "weight": 5,
+        "value": 200, "health": 5, "size": 5, "weight": 5,   # 40 pts/hit × 5
         "colors": {"body": "#787882", "belly": "#B4B4BE", "muzzle": "#64646E", "eye": "#C8B432"},
         "cells": [(1, 0), (0, 1), (1, 1), (2, 1), (1, 2)], "category": "large"
     },
     "deer": {
-        "value": 130, "health": 4, "size": 4, "weight": 6,
+        "value": 160, "health": 4, "size": 4, "weight": 6,   # 40 pts/hit × 4
         "colors": {"body": "#B48C64", "belly": "#DCC8AA", "spots": "#C8A078", "antlers": "#64503C"},
         "cells": [(0, 0), (0, 1), (0, 2), (0, 3)], "category": "large"
     },
     "pig": {
-        "value": 90, "health": 4, "size": 4, "weight": 8,
+        "value": 160, "health": 4, "size": 4, "weight": 8,   # 40 pts/hit × 4
         "colors": {"body": "#FFB4B4", "snout": "#FF9696", "eye": "#1E1E1E"},
         "cells": [(0, 0), (1, 0), (0, 1), (1, 1)], "category": "large"
     },
     
-    # Huge animals (6-8 cells, 6-8 health)
+    # Huge animals (health capped at 5, 2.5s recovery) — 60-80pts/hit
     "tiger": {
-        "value": 250, "health": 6, "size": 6, "weight": 3,
+        "value": 300, "health": 5, "size": 6, "weight": 3,   # 60 pts/hit × 5
         "colors": {"body": "#FFA532", "stripes": "#281E14", "belly": "#FFDCB4", "eye": "#C8B432"},
         "cells": [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)], "category": "huge"
     },
     "lion": {
-        "value": 280, "health": 6, "size": 6, "weight": 3,
+        "value": 350, "health": 5, "size": 6, "weight": 3,   # 70 pts/hit × 5
         "colors": {"body": "#DCB464", "mane": "#B47832", "belly": "#F0DCB4", "eye": "#967832"},
         "cells": [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)], "category": "huge"
     },
     "bear": {
-        "value": 220, "health": 6, "size": 6, "weight": 4,
+        "value": 280, "health": 5, "size": 6, "weight": 4,   # 56 pts/hit × 5
         "colors": {"body": "#644632", "snout": "#8C6446", "belly": "#785A46", "eye": "#1E1914"},
         "cells": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2)], "category": "huge"
     },
     "crocodile": {
-        "value": 200, "health": 6, "size": 6, "weight": 4,
+        "value": 260, "health": 5, "size": 6, "weight": 4,   # 52 pts/hit × 5
         "colors": {"body": "#46643C", "belly": "#8CA078", "scales": "#325028", "eye": "#C8C832"},
         "cells": [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0)], "category": "huge"
     },
     "hippo": {
-        "value": 350, "health": 8, "size": 8, "weight": 2,
+        "value": 375, "health": 5, "size": 8, "weight": 2,   # 75 pts/hit × 5 (was 8 health)
         "colors": {"body": "#826E78", "belly": "#B4A0AA", "mouth": "#C896A0", "eye": "#28232A"},
         "cells": [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)], "category": "huge"
     },
     "elephant": {
-        "value": 400, "health": 8, "size": 8, "weight": 1,
+        "value": 400, "health": 5, "size": 8, "weight": 1,   # 80 pts/hit × 5 (was 8 health)
         "colors": {"body": "#8C8C96", "ear": "#A08C96", "tusk": "#FFFFF0", "eye": "#322D32"},
         "cells": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2), (0, 3), (1, 3)], "category": "huge"
     },

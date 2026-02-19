@@ -134,8 +134,9 @@ export class SnakeGame {
     start() {
         this.running = true;
         this.hud.reset();
-        // Reset graphics cache for new game
-        this.resetGraphicsCache();
+        // Note: graphics cache is intentionally NOT reset here.
+        // The canvas is already pre-rendered during the countdown (via game_start/game_state events),
+        // so clearing it would cause a needless flash. New SnakeGame instances start with an empty cache.
     }
     
     /**
@@ -592,6 +593,14 @@ export class SnakeGame {
         const type = food.type;
         const cells = food.cells || [[0, 0]];
         
+        // Recovery flash: pulsing transparency when animal is in cooldown after being hit
+        if (food.recovering && food.hit_recovery > 0) {
+            const flashPhase = Math.sin(Date.now() / 80) * 0.5 + 0.5;  // 0-1 oscillation
+            graphics.alpha = 0.25 + flashPhase * 0.45;  // Range: 0.25 – 0.70
+        } else {
+            graphics.alpha = 1.0;
+        }
+        
         // Draw based on animal category and type
         if (food.category === 'small') {
             this.drawSmallAnimal(graphics, baseX, baseY, type, colors);
@@ -603,23 +612,33 @@ export class SnakeGame {
             this.drawHugeAnimal(graphics, baseX, baseY, type, colors, cells);
         }
         
-        // Health bar for multi-hit animals
+        // Health bar for multi-hit animals (shown even during recovery to indicate damage)
         if (food.max_health > 1) {
-            const totalWidth = cells.length > 1 ? 
-                (Math.max(...cells.map(c => c[0])) + 1) * this.cellSize : this.cellSize;
+            // Span the widest row of cells
+            const maxCol = cells.length > 1 ? Math.max(...cells.map(c => c[0])) : 0;
+            const totalWidth = (maxCol + 1) * this.cellSize;
             const healthPercent = food.health / food.max_health;
+            const barH = 5;
+            const barY = baseY - barH - 1;
             
-            // Background
-            graphics.beginFill(0x333333);
-            graphics.drawRect(baseX, baseY - 5, totalWidth - 2, 4);
+            // Background (dark track)
+            graphics.beginFill(0x1a1a2e, 0.85);
+            graphics.drawRoundedRect(baseX, barY, totalWidth - 2, barH, 2);
             graphics.endFill();
             
-            // Health fill
-            const healthColor = healthPercent > 0.5 ? 0x22C55E : 
-                               healthPercent > 0.25 ? 0xF59E0B : 0xEF4444;
+            // Health fill with colour coding
+            const healthColor = healthPercent > 0.6 ? 0x22C55E :
+                                healthPercent > 0.35 ? 0xF59E0B : 0xEF4444;
             graphics.beginFill(healthColor);
-            graphics.drawRect(baseX, baseY - 5, (totalWidth - 2) * healthPercent, 4);
+            graphics.drawRoundedRect(baseX, barY, Math.max(2, (totalWidth - 2) * healthPercent), barH, 2);
             graphics.endFill();
+            
+            // Recovery indicator: show a small ⏱ shimmer overlay across full bar
+            if (food.recovering) {
+                graphics.beginFill(0xffffff, 0.18);
+                graphics.drawRoundedRect(baseX, barY, totalWidth - 2, barH, 2);
+                graphics.endFill();
+            }
         }
         
         return poolIndex + 1;

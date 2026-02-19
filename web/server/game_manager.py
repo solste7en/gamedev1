@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from .models import (
     GameState, GameType, GameMode, Player, PlayerState, Snake, Food, Wall,
     Position, Direction, QuadrantBounds, PLAYER_COLORS, get_random_food,
-    BARRIER_CONFIGS, MAP_SIZES, TIME_LIMIT_OPTIONS, AI_DIFFICULTY_SETTINGS
+    BARRIER_CONFIGS, MAP_SIZES, TIME_LIMIT_OPTIONS, AI_DIFFICULTY_SETTINGS,
+    FOOD_HIT_RECOVERY
 )
 from .room_manager import Room
 
@@ -138,9 +139,15 @@ class GameManager:
         self.state.start_time = time.time()
         self.state.running = True
         
+        # Always reset speed to base to prevent carryover across games
+        self.state.current_speed = self.state.base_speed
+        self.state.elapsed_time = 0
+        
         # Set mode-specific settings
         if self.state.mode == GameMode.SURVIVAL:
             self.state.next_shrink_time = self.state.shrink_interval
+            self.state.survival_speed_next_increase = self.state.survival_speed_increase_interval
+            self.state.survival_decay_current_interval = 6.0
             # Give every snake a full initial decay interval
             for player in self.state.players.values():
                 if player.snake:
@@ -597,6 +604,12 @@ class GameManager:
         
         self.state.elapsed_time += dt
         
+        # Tick down hit-recovery windows on all food (non-consecutive hit enforcement)
+        for quadrant_foods in self.state.foods.values():
+            for food in quadrant_foods:
+                if food.hit_recovery > 0:
+                    food.hit_recovery = max(0.0, food.hit_recovery - dt)
+        
         # Mode-specific updates
         if self.state.mode == GameMode.SURVIVAL:
             self._update_survival(dt)
@@ -765,45 +778,71 @@ class GameManager:
         # Check food collision (check all cells of multi-cell food)
         ate_food = False
         foods = self.state.foods.get(player.quadrant, [])
+        barrier_config = BARRIER_CONFIGS.get(self.state.barrier_density, BARRIER_CONFIGS["none"])
+        
         for food in foods[:]:  # Copy list to allow removal
+            # Skip animals that are in their hit-recovery window (non-consecutive rule)
+            if food.hit_recovery > 0:
+                continue
+            
             # Check if head hit any cell of this food
             food_positions = food.get_all_positions()
             hit = any(new_head.x == fp.x and new_head.y == fp.y for fp in food_positions)
             
             if hit:
+                # Score per hit = base_value_per_hit × barrier_multiplier (× combo if last hit)
+                base_pts_per_hit = food.value // food.max_health
+                
                 food.health -= 1
+                
                 if food.health <= 0:
-                    # Food eaten completely
-                    score = food.value
+                    # Final hit — food is consumed; award remaining points + combo bonus
+                    score = int(base_pts_per_hit * barrier_config["multiplier"])
                     
-                    # Apply barrier multiplier
-                    barrier_config = BARRIER_CONFIGS.get(self.state.barrier_density, BARRIER_CONFIGS["none"])
-                    score = int(score * barrier_config["multiplier"])
-                    
-                    # Combo bonus (all modes)
+                    # Combo bonus applies on the kill hit only
                     if self.state.mode in [GameMode.HIGH_SCORE, GameMode.SINGLE_PLAYER, GameMode.SURVIVAL]:
                         snake.combo += 1
-                        snake.combo_timer = 2.0  # 2 second combo window
-                        score = int(score * (1 + snake.combo * 0.1))  # 10% bonus per combo
-
-                    # Survival mode: eating food resets the decay timer
+                        snake.combo_timer = 2.0
+                        score = int(score * (1 + snake.combo * 0.1))  # 10% per combo streak
+                    
+                    # Survival mode: eating resets the decay timer
                     if self.state.mode == GameMode.SURVIVAL:
                         snake.decay_timer = self._get_survival_decay_interval()
-
+                    
                     snake.score += score
                     foods.remove(food)
                     self._spawn_food(player.quadrant)
                     
-                    # Track high score in single player
                     if self.state.mode == GameMode.SINGLE_PLAYER:
                         if snake.score > self.state.single_player_high_score:
                             self.state.single_player_high_score = snake.score
+                else:
+                    # Partial hit — award per-hit score immediately, start recovery window
+                    score = int(base_pts_per_hit * barrier_config["multiplier"])
+                    snake.score += score
+                    
+                    # Begin recovery: snake must leave and re-approach for next hit
+                    recovery_duration = FOOD_HIT_RECOVERY.get(food.category, 0.0)
+                    food.hit_recovery = recovery_duration
+                    
+                    if self.state.mode == GameMode.SINGLE_PLAYER:
+                        if snake.score > self.state.single_player_high_score:
+                            self.state.single_player_high_score = snake.score
+                
                 ate_food = True
                 break
         
         # Remove tail if no food eaten
         if not ate_food:
             snake.body.pop()
+    
+    # Fibonacci respawn delays (seconds): 2, 3, 5, 8, 13, 21 then capped
+    _RESPAWN_FIBONACCI = [2, 3, 5, 8, 13, 21]
+    
+    def _get_respawn_delay(self, death_count: int) -> float:
+        """Return fibonacci-based respawn delay for the nth death (1-indexed)."""
+        idx = min(death_count - 1, len(self._RESPAWN_FIBONACCI) - 1)
+        return float(self._RESPAWN_FIBONACCI[max(0, idx)])
     
     def _kill_snake(self, player: Player):
         """Kill a player's snake"""
@@ -813,6 +852,12 @@ class GameManager:
         player.snake.alive = False
         player.state = PlayerState.DEAD
         player.death_time = time.time()
+        player.death_count += 1
+        
+        # Progressive respawn penalty in high score mode (fibonacci sequence)
+        if self.state.mode == GameMode.HIGH_SCORE:
+            player.respawn_delay = self._get_respawn_delay(player.death_count)
+        
         self.state.alive_count -= 1
         
         # Assign rank (for survival mode)
@@ -952,10 +997,9 @@ class GameManager:
         
         # Dead-end avoidance for higher difficulties
         if settings.get("dead_end_check", False) and len(safe_directions) > 1:
-            safe_directions = self._ai_filter_dead_ends(player, safe_directions)
-            if not safe_directions:
-                # Fallback to original safe directions
-                safe_directions = [d for d in directions if self._ai_is_direction_safe(player, d, look_ahead)]
+            filtered = self._ai_filter_dead_ends(player, safe_directions, settings)
+            if filtered:
+                safe_directions = filtered
         
         # Decide based on difficulty
         is_deterministic = settings.get("deterministic", False)
@@ -963,7 +1007,7 @@ class GameManager:
         
         if is_deterministic or random.random() < food_seeking_chance:
             # Seek food (deterministic or by chance)
-            return self._ai_direction_to_food(player, safe_directions, is_deterministic)
+            return self._ai_direction_to_food(player, safe_directions, settings)
         else:
             # Random safe direction (only for lower difficulties)
             return random.choice(safe_directions)
@@ -1018,7 +1062,8 @@ class GameManager:
         
         return True
     
-    def _ai_filter_dead_ends(self, player: Player, safe_directions: List[Direction]) -> List[Direction]:
+    def _ai_filter_dead_ends(self, player: Player, safe_directions: List[Direction],
+                              settings: dict = None) -> List[Direction]:
         """Filter out directions that lead to dead ends (areas with few escape routes)"""
         snake = player.snake
         head = snake.body[0]
@@ -1027,13 +1072,16 @@ class GameManager:
         if not bounds:
             return safe_directions
         
+        if settings is None:
+            settings = AI_DIFFICULTY_SETTINGS.get(player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"])
+        
         wall_positions = self._get_wall_positions(player.quadrant)
         snake_positions = set((pos.x, pos.y) for pos in snake.body[:-1])
         
-        # Count reachable cells for each direction using flood-fill (limited depth)
-        direction_scores = []
-        max_depth = 15  # Limit flood-fill depth for performance
+        max_depth = settings.get("flood_fill_depth", 15)
+        threshold_ratio = settings.get("dead_end_threshold", 0.3)
         
+        direction_scores = []
         for direction in safe_directions:
             dx, dy = {
                 Direction.UP: (0, -1),
@@ -1045,18 +1093,21 @@ class GameManager:
             start_x = head.x + dx
             start_y = head.y + dy
             
-            # Flood-fill to count reachable cells
             reachable = self._flood_fill_count(
                 start_x, start_y, bounds, wall_positions, snake_positions, max_depth
             )
             direction_scores.append((direction, reachable))
         
-        # Filter out directions with significantly fewer reachable cells
         if direction_scores:
             max_reachable = max(score for _, score in direction_scores)
-            threshold = max_reachable * 0.3  # At least 30% of best
+            threshold = max_reachable * threshold_ratio
             filtered = [d for d, score in direction_scores if score >= threshold]
             if filtered:
+                # For deterministic AI, also return sorted by reachable space (most space first)
+                if settings.get("deterministic", False):
+                    filtered_with_scores = [(d, s) for d, s in direction_scores if s >= threshold]
+                    filtered_with_scores.sort(key=lambda x: -x[1])
+                    return [d for d, _ in filtered_with_scores]
                 return filtered
         
         return safe_directions
@@ -1091,60 +1142,70 @@ class GameManager:
         
         return count
     
-    def _ai_direction_to_food(self, player: Player, safe_directions: List[Direction], 
-                               deterministic: bool = False) -> Direction:
-        """Find the best direction to move towards food"""
+    def _ai_direction_to_food(self, player: Player, safe_directions: List[Direction],
+                               settings: dict = None) -> Direction:
+        """Find the best direction to move towards food, using difficulty-based food scoring"""
         snake = player.snake
         head = snake.body[0]
         quadrant = player.quadrant
         
-        # Find nearest food
+        if settings is None:
+            settings = AI_DIFFICULTY_SETTINGS.get(player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"])
+        
+        deterministic = settings.get("deterministic", False)
+        value_power = settings.get("value_power", 1.0)
+        combo_aware = settings.get("combo_aware", False)
+        
         foods = self.state.foods.get(quadrant, [])
         if not foods:
-            # No food - use deterministic fallback (first safe direction) or random
             return safe_directions[0] if deterministic else random.choice(safe_directions)
         
-        # Find closest food (prioritize by value/distance ratio for smarter targeting)
-        nearest_food = None
-        best_value = -float('inf')
+        # Pick the best food target using value^power / distance scoring
+        # Higher value_power makes the AI prefer high-value animals over close ones
+        current_combo = snake.combo if combo_aware else 0
+        best_food = None
+        best_food_score = -float('inf')
         
         for food in foods:
             food_pos = food.position
             distance = abs(head.x - food_pos.x) + abs(head.y - food_pos.y)
             if distance == 0:
-                distance = 0.5  # Avoid division by zero
-            # Score by value per distance
-            value = food.value / distance
-            if value > best_value:
-                best_value = value
-                nearest_food = food
+                distance = 0.5
+            
+            # Base score: value^power / distance
+            effective_value = (food.value ** value_power) / distance
+            
+            # Combo-aware bonus: if we have a combo going, slightly prefer the nearest
+            # food to maintain the streak; if no combo yet, prefer high-value targets
+            if combo_aware and current_combo >= 2:
+                effective_value = effective_value * (1.0 + current_combo * 0.05)
+            
+            if effective_value > best_food_score:
+                best_food_score = effective_value
+                best_food = food
         
-        if not nearest_food:
+        if not best_food:
             return safe_directions[0] if deterministic else random.choice(safe_directions)
         
-        food_pos = nearest_food.position
+        food_pos = best_food.position
         
-        # Determine which direction gets us closer
-        # Use deterministic tie-breaking: prefer directions in order given (current dir first)
+        # Determine which safe direction reduces Manhattan distance to the chosen food most
         best_direction = None
         best_score = float('inf')
         
+        dir_vectors = {
+            Direction.UP: (0, -1),
+            Direction.DOWN: (0, 1),
+            Direction.LEFT: (-1, 0),
+            Direction.RIGHT: (1, 0)
+        }
+        
         for direction in safe_directions:
-            dx, dy = {
-                Direction.UP: (0, -1),
-                Direction.DOWN: (0, 1),
-                Direction.LEFT: (-1, 0),
-                Direction.RIGHT: (1, 0)
-            }[direction]
-            
+            dx, dy = dir_vectors[direction]
             new_x = head.x + dx
             new_y = head.y + dy
-            
-            # Calculate new distance to food
             new_distance = abs(new_x - food_pos.x) + abs(new_y - food_pos.y)
             
-            # For deterministic mode, only update if strictly better (not equal)
-            # This preserves the direction priority order for ties
             if new_distance < best_score:
                 best_score = new_distance
                 best_direction = direction
@@ -1152,7 +1213,6 @@ class GameManager:
         if best_direction:
             return best_direction
         
-        # Fallback
         return safe_directions[0] if deterministic else random.choice(safe_directions)
     
     async def run_game_loop(self):
@@ -1185,11 +1245,11 @@ class GameManager:
                 "state": self.state.to_dict()
             })
             
-            # Handle respawns in high score mode
+            # Handle respawns in high score mode (fibonacci-increasing delay per death)
             if self.state.mode == GameMode.HIGH_SCORE:
                 for player in self.state.players.values():
                     if player.state == PlayerState.DEAD and player.death_time:
-                        if time.time() - player.death_time >= 2:  # 2 second respawn
+                        if time.time() - player.death_time >= player.respawn_delay:
                             self._respawn_snake(player)
             
             # Sleep to maintain tick rate

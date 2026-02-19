@@ -39,6 +39,17 @@ export class Menu {
         this.leaderboardModal = document.getElementById('leaderboard-modal');
         this.leaderboardList = document.getElementById('leaderboard-list');
         this.btnLeaderboardClose = document.getElementById('btn-leaderboard-close');
+        this.leaderboardPagination = document.getElementById('leaderboard-pagination');
+        this.btnLbPrev = document.getElementById('btn-lb-prev');
+        this.btnLbNext = document.getElementById('btn-lb-next');
+        this.lbPageInfo = document.getElementById('lb-page-info');
+        
+        // Leaderboard pagination state
+        this._lbEntries = [];
+        this._lbPage = 0;
+        this._lbPageSize = 50;
+        this._lbShowUnique = false;
+        this.lbUniqueToggle = document.getElementById('lb-unique-toggle');
         
         // Lists
         this.roomList = document.getElementById('room-list');
@@ -62,6 +73,20 @@ export class Menu {
         
         // Leaderboard modal
         this.btnLeaderboardClose.addEventListener('click', () => this.hideLeaderboard());
+        this.btnLbPrev.addEventListener('click', () => {
+            if (this._lbPage > 0) { this._lbPage--; this._renderLeaderboardPage(); }
+        });
+        this.btnLbNext.addEventListener('click', () => {
+            const maxPage = Math.ceil(this._getFilteredEntries().length / this._lbPageSize) - 1;
+            if (this._lbPage < maxPage) { this._lbPage++; this._renderLeaderboardPage(); }
+        });
+        if (this.lbUniqueToggle) {
+            this.lbUniqueToggle.addEventListener('change', (e) => {
+                this._lbShowUnique = e.target.checked;
+                this._lbPage = 0;  // Reset to first page on filter change
+                this._renderLeaderboardPage();
+            });
+        }
         
         // Join modal
         this.btnJoinConfirm.addEventListener('click', () => this.joinRoom());
@@ -290,8 +315,10 @@ export class Menu {
                     <div class="banner-text">Brawler leaderboard coming soon!</div>
                 </div>
             `;
+            if (this.leaderboardPagination) this.leaderboardPagination.classList.add('hidden');
         } else {
             this.leaderboardList.innerHTML = '<div class="loading">Loading...</div>';
+            if (this.leaderboardPagination) this.leaderboardPagination.classList.add('hidden');
             this.network.getLeaderboard();
         }
     }
@@ -316,32 +343,72 @@ export class Menu {
     }
     
     /**
-     * Update leaderboard display
+     * Update leaderboard display — stores all entries and renders page 1
      */
     updateLeaderboard(entries) {
         if (!entries || entries.length === 0) {
             this.leaderboardList.innerHTML = '<div class="leaderboard-empty">No scores yet. Be the first!</div>';
+            if (this.leaderboardPagination) this.leaderboardPagination.classList.add('hidden');
             return;
         }
         
+        this._lbEntries = entries;
+        this._lbPage = 0;
+        if (this.leaderboardPagination) this.leaderboardPagination.classList.remove('hidden');
+        this._renderLeaderboardPage();
+    }
+    
+    /**
+     * Return entries filtered by the current toggle state
+     */
+    _getFilteredEntries() {
+        if (!this._lbShowUnique) return this._lbEntries;
+        // Keep only the highest score per unique player name (already sorted desc)
+        const seen = new Set();
+        return this._lbEntries.filter(e => {
+            const key = e.player_name.toLowerCase().trim();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+    
+    /**
+     * Render the current leaderboard page
+     */
+    _renderLeaderboardPage() {
+        const entries = this._getFilteredEntries();
+        const pageSize = this._lbPageSize;
+        const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+        const page = this._lbPage;
+        const start = page * pageSize;
+        const pageEntries = entries.slice(start, start + pageSize);
+        
         this.leaderboardList.innerHTML = '';
         
-        entries.forEach((entry, index) => {
-            const rank = index + 1;
+        pageEntries.forEach((entry, localIdx) => {
+            const rank = start + localIdx + 1;
             const item = document.createElement('div');
             item.className = 'leaderboard-entry';
             
-            // Color coding: 1-3 green (gold), 4-10 blue (silver)
+            // Expanded color tiers
             if (rank <= 3) {
-                item.classList.add('rank-gold');
+                item.classList.add('rank-top3');
             } else if (rank <= 10) {
-                item.classList.add('rank-silver');
+                item.classList.add('rank-top10');
+            } else if (rank <= 30) {
+                item.classList.add('rank-top30');
+            } else if (rank <= 50) {
+                item.classList.add('rank-top50');
+            } else if (rank <= 100) {
+                item.classList.add('rank-top100');
             }
             
             const gameMode = this.formatGameMode(entry.game_mode);
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
             
             item.innerHTML = `
-                <span class="entry-rank">#${rank}</span>
+                <span class="entry-rank">${medal || '#' + rank}</span>
                 <span class="entry-name">${this.escapeHtml(entry.player_name)}</span>
                 <span class="entry-mode">${gameMode}</span>
                 <span class="entry-score">${entry.score.toLocaleString()}</span>
@@ -350,6 +417,11 @@ export class Menu {
             
             this.leaderboardList.appendChild(item);
         });
+        
+        // Update pagination controls
+        this.lbPageInfo.textContent = `Page ${page + 1} / ${totalPages}`;
+        this.btnLbPrev.disabled = page === 0;
+        this.btnLbNext.disabled = page >= totalPages - 1;
     }
     
     /**

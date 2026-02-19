@@ -58,7 +58,7 @@ export class HUD {
     }
     
     /**
-     * Update scoreboard display
+     * Update scoreboard display, including respawn countdown for dead players
      */
     updateScoreboard(players) {
         this.scoreboard.innerHTML = '';
@@ -77,11 +77,20 @@ export class HUD {
             const color = player.snake ? player.snake.color : '#FFFFFF';
             const score = player.snake ? player.snake.score : 0;
             const alive = player.snake ? player.snake.alive : false;
+            const respawnRemaining = player.respawn_remaining || 0;
+            const deathCount = player.death_count || 0;
+            
+            let statusSuffix = '';
+            if (!alive && respawnRemaining > 0) {
+                statusSuffix = `<span class="respawn-countdown">↺ ${respawnRemaining.toFixed(1)}s</span>`;
+            } else if (!alive && deathCount > 0) {
+                statusSuffix = `<span class="respawn-countdown respawn-ready">↺</span>`;
+            }
             
             item.innerHTML = `
                 <div class="score-color" style="background-color: ${color}; opacity: ${alive ? 1 : 0.4}"></div>
                 <span class="score-name" style="opacity: ${alive ? 1 : 0.4}">${player.name}</span>
-                <span class="score-value">${score}</span>
+                <span class="score-value">${score}${statusSuffix}</span>
             `;
             
             this.scoreboard.appendChild(item);

@@ -204,14 +204,15 @@ class App {
         this.network.on('game_starting', async (data) => {
             await this.startGame();
             
-            // Show countdown with sound
+            // Start the game engine immediately so the map renders during countdown.
+            // Players can see their position and orient themselves before GO!
+            if (this.game) {
+                this.game.start();
+            }
+            
+            // Show countdown with sound (map is visible underneath semi-transparent overlay)
             this.hud.animateCountdown(
-                () => {
-                    if (this.game) {
-                        this.game.start();
-                    }
-                    this.sound.play('go');
-                },
+                () => { this.sound.play('go'); },
                 () => this.sound.play('countdown')
             );
         });
@@ -319,6 +320,9 @@ class App {
      * Start the game
      */
     async startGame() {
+        // Reset HUD state (clears survival pressure, speed indicator, etc. from previous game)
+        this.hud.reset();
+        
         this.lobby.hide();
         this.menu.hide();
         
