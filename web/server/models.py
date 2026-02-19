@@ -65,51 +65,63 @@ class AIDifficulty(Enum):
 AI_DIFFICULTY_SETTINGS = {
     "amateur": {
         "name": "Amateur",
-        "reaction_time": 380,   # ms between decisions
-        "food_seeking": 0.35,   # Probability to seek food vs random
-        "look_ahead": 1,        # How many cells to look ahead for safety
-        "deterministic": False, # Use random fallback
-        "dead_end_check": False,# Check for dead ends
-        "flood_fill_depth": 8,  # BFS depth for dead-end detection
-        "dead_end_threshold": 0.2,  # Min fraction of best reachable cells
-        "value_power": 1.0,     # Exponent for food value scoring (higher = prefer big food)
-        "combo_aware": False,   # Whether to prioritize maintaining combos
+        "reaction_time": 260,
+        "food_seeking": 0.70,
+        "deterministic": False,
+        "dead_end_check": False,
+        "flood_fill_depth": 8,
+        "dead_end_threshold": 0.2,
+        "randomness": 35,
+        "use_pathfinding": False,
+        "pathfinding_depth": 20,
+        "value_power": 1.0,
+        "combo_aware": False,
+        "survival_awareness": False,
     },
     "semi_pro": {
         "name": "Semi-Pro",
-        "reaction_time": 180,
-        "food_seeking": 0.78,
-        "look_ahead": 3,
+        "reaction_time": 140,
+        "food_seeking": 0.88,
         "deterministic": False,
-        "dead_end_check": False,
-        "flood_fill_depth": 12,
-        "dead_end_threshold": 0.3,
+        "dead_end_check": True,
+        "flood_fill_depth": 20,
+        "dead_end_threshold": 0.25,
+        "randomness": 15,
+        "use_pathfinding": True,
+        "pathfinding_depth": 35,
         "value_power": 1.0,
         "combo_aware": False,
+        "survival_awareness": True,
     },
     "pro": {
         "name": "Pro",
-        "reaction_time": 70,   # Faster reaction (was 120)
-        "food_seeking": 0.97,
-        "look_ahead": 8,       # Deeper look-ahead (was 5)
+        "reaction_time": 50,
+        "food_seeking": 1.0,
         "deterministic": True,
         "dead_end_check": True,
-        "flood_fill_depth": 28,        # Much deeper flood-fill
-        "dead_end_threshold": 0.45,    # Stricter dead-end avoidance
-        "value_power": 1.3,            # Prefer high-value food
-        "combo_aware": True,           # Try to maintain combos in high score mode
+        "flood_fill_depth": 40,
+        "dead_end_threshold": 0.35,
+        "randomness": 0,
+        "use_pathfinding": True,
+        "pathfinding_depth": 60,
+        "value_power": 1.3,
+        "combo_aware": True,
+        "survival_awareness": True,
     },
     "world_class": {
         "name": "World-Class",
-        "reaction_time": 22,   # Very fast (was 50)
+        "reaction_time": 18,
         "food_seeking": 1.0,
-        "look_ahead": 12,      # Max look-ahead (was 7)
         "deterministic": True,
         "dead_end_check": True,
-        "flood_fill_depth": 50,        # Deep flood-fill for best space evaluation
-        "dead_end_threshold": 0.55,    # Very strict dead-end avoidance
-        "value_power": 1.6,            # Strongly prefer high-value food
+        "flood_fill_depth": 80,
+        "dead_end_threshold": 0.40,
+        "randomness": 0,
+        "use_pathfinding": True,
+        "pathfinding_depth": 120,
+        "value_power": 1.5,
         "combo_aware": True,
+        "survival_awareness": True,
     }
 }
 

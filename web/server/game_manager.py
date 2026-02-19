@@ -6,6 +6,7 @@ import asyncio
 import random
 import time
 import math
+from collections import deque
 from typing import Dict, Optional, List, Callable, Set, Tuple
 from dataclasses import dataclass
 
@@ -27,7 +28,20 @@ AI_NAMES = [
 
 class GameManager:
     """Manages game state and logic for a single game instance"""
-    
+
+    _DIR_VECTORS = {
+        Direction.UP: (0, -1),
+        Direction.DOWN: (0, 1),
+        Direction.LEFT: (-1, 0),
+        Direction.RIGHT: (1, 0),
+    }
+    _OPPOSITE = {
+        Direction.UP: Direction.DOWN,
+        Direction.DOWN: Direction.UP,
+        Direction.LEFT: Direction.RIGHT,
+        Direction.RIGHT: Direction.LEFT,
+    }
+
     def __init__(self, room: Room, broadcast_callback: Callable):
         self.room = room
         self.broadcast = broadcast_callback
@@ -935,286 +949,277 @@ class GameManager:
             self.state.winner_id = players_sorted[0].id
     
     # ==================== AI Snake Logic ====================
-    
+
     def _update_ai_snake(self, player: Player, current_time: float):
         """Update AI snake decision making"""
         if not player.snake or not player.snake.alive:
             return
-        
-        # Get AI settings
-        settings = AI_DIFFICULTY_SETTINGS.get(player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"])
-        reaction_time = settings["reaction_time"] / 1000.0  # Convert ms to seconds
-        
-        # Check if enough time has passed since last decision
+
+        settings = AI_DIFFICULTY_SETTINGS.get(
+            player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"]
+        )
+        reaction_time = settings["reaction_time"] / 1000.0
+
         if current_time - player.ai_last_decision < reaction_time:
             return
-        
+
         player.ai_last_decision = current_time
-        
-        # Get the AI's decision
         new_direction = self._ai_decide_direction(player, settings)
-        
-        if new_direction:
-            # Check it's not a 180 degree turn
-            opposite = {
-                Direction.UP: Direction.DOWN,
-                Direction.DOWN: Direction.UP,
-                Direction.LEFT: Direction.RIGHT,
-                Direction.RIGHT: Direction.LEFT
-            }
-            if new_direction != opposite.get(player.snake.direction):
-                player.snake.next_direction = new_direction
-    
-    def _ai_decide_direction(self, player: Player, settings: dict) -> Optional[Direction]:
-        """AI decides the best direction to move"""
-        snake = player.snake
-        head = snake.body[0]
+
+        if new_direction and new_direction != self._OPPOSITE.get(player.snake.direction):
+            player.snake.next_direction = new_direction
+
+    # ---- helpers ----
+
+    def _ai_build_blocked(self, player: Player) -> Set[Tuple[int, int]]:
+        """All cells that would kill the snake on the next step."""
         quadrant = player.quadrant
-        bounds = self.state.quadrant_bounds.get(quadrant)
-        
-        if not bounds:
-            return None
-        
-        # Direction priority for deterministic tie-breaking: current direction first, then clockwise
-        current_dir = snake.direction
-        clockwise_order = [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]
-        
-        # Build priority order: current direction first, then clockwise from current
-        current_idx = clockwise_order.index(current_dir) if current_dir in clockwise_order else 0
-        directions = [current_dir]
-        for i in range(1, 4):
-            directions.append(clockwise_order[(current_idx + i) % 4])
-        
-        # Calculate safe directions (avoid walls, boundaries, self, other snakes)
-        look_ahead = settings["look_ahead"]
-        safe_directions = []
-        for direction in directions:
-            if self._ai_is_direction_safe(player, direction, look_ahead):
-                safe_directions.append(direction)
-        
-        if not safe_directions:
-            # No safe direction - try current direction as last resort
-            return snake.direction
-        
-        # Dead-end avoidance for higher difficulties
-        if settings.get("dead_end_check", False) and len(safe_directions) > 1:
-            filtered = self._ai_filter_dead_ends(player, safe_directions, settings)
-            if filtered:
-                safe_directions = filtered
-        
-        # Decide based on difficulty
-        is_deterministic = settings.get("deterministic", False)
-        food_seeking_chance = settings["food_seeking"]
-        
-        if is_deterministic or random.random() < food_seeking_chance:
-            # Seek food (deterministic or by chance)
-            return self._ai_direction_to_food(player, safe_directions, settings)
-        else:
-            # Random safe direction (only for lower difficulties)
-            return random.choice(safe_directions)
-    
-    def _ai_is_direction_safe(self, player: Player, direction: Direction, look_ahead: int) -> bool:
-        """Check if a direction is safe to move in"""
-        snake = player.snake
-        head = snake.body[0]
-        bounds = self.state.quadrant_bounds.get(player.quadrant)
-        
-        if not bounds:
-            return False
-        
-        # Calculate the positions we would be in
-        dx, dy = {
-            Direction.UP: (0, -1),
-            Direction.DOWN: (0, 1),
-            Direction.LEFT: (-1, 0),
-            Direction.RIGHT: (1, 0)
-        }[direction]
-        
-        # Get wall positions once (cached)
-        wall_positions = self._get_wall_positions(player.quadrant)
-        
-        # Check each position ahead
-        for i in range(1, look_ahead + 1):
-            check_x = head.x + dx * i
-            check_y = head.y + dy * i
-            
-            # Check boundaries
-            if not (bounds.x_min <= check_x < bounds.x_max and 
-                    bounds.y_min <= check_y < bounds.y_max):
-                return False
-            
-            # Check walls
-            if (check_x, check_y) in wall_positions:
-                return False
-            
-            # Check self collision (only first step matters for 180 turns)
-            if i == 1:
-                for body_pos in snake.body[:-1]:  # Don't check tail as it will move
-                    if body_pos.x == check_x and body_pos.y == check_y:
-                        return False
-                
-                # Check other snakes in same quadrant
-                for other_player in self.state.players.values():
-                    if other_player.id != player.id and other_player.quadrant == player.quadrant:
-                        if other_player.snake and other_player.snake.alive:
-                            for body_pos in other_player.snake.body:
-                                if body_pos.x == check_x and body_pos.y == check_y:
-                                    return False
-        
-        return True
-    
-    def _ai_filter_dead_ends(self, player: Player, safe_directions: List[Direction],
-                              settings: dict = None) -> List[Direction]:
-        """Filter out directions that lead to dead ends (areas with few escape routes)"""
-        snake = player.snake
-        head = snake.body[0]
-        bounds = self.state.quadrant_bounds.get(player.quadrant)
-        
-        if not bounds:
-            return safe_directions
-        
-        if settings is None:
-            settings = AI_DIFFICULTY_SETTINGS.get(player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"])
-        
-        wall_positions = self._get_wall_positions(player.quadrant)
-        snake_positions = set((pos.x, pos.y) for pos in snake.body[:-1])
-        
-        max_depth = settings.get("flood_fill_depth", 15)
-        threshold_ratio = settings.get("dead_end_threshold", 0.3)
-        
-        direction_scores = []
-        for direction in safe_directions:
-            dx, dy = {
-                Direction.UP: (0, -1),
-                Direction.DOWN: (0, 1),
-                Direction.LEFT: (-1, 0),
-                Direction.RIGHT: (1, 0)
-            }[direction]
-            
-            start_x = head.x + dx
-            start_y = head.y + dy
-            
-            reachable = self._flood_fill_count(
-                start_x, start_y, bounds, wall_positions, snake_positions, max_depth
-            )
-            direction_scores.append((direction, reachable))
-        
-        if direction_scores:
-            max_reachable = max(score for _, score in direction_scores)
-            threshold = max_reachable * threshold_ratio
-            filtered = [d for d, score in direction_scores if score >= threshold]
-            if filtered:
-                # For deterministic AI, also return sorted by reachable space (most space first)
-                if settings.get("deterministic", False):
-                    filtered_with_scores = [(d, s) for d, s in direction_scores if s >= threshold]
-                    filtered_with_scores.sort(key=lambda x: -x[1])
-                    return [d for d, _ in filtered_with_scores]
-                return filtered
-        
-        return safe_directions
-    
-    def _flood_fill_count(self, start_x: int, start_y: int, bounds: QuadrantBounds,
-                          wall_positions: Set[Tuple[int, int]], 
-                          snake_positions: Set[Tuple[int, int]],
-                          max_depth: int) -> int:
-        """Count reachable cells from a starting position"""
-        visited = set()
-        queue = [(start_x, start_y, 0)]
-        count = 0
-        
-        while queue:
-            x, y, depth = queue.pop(0)
-            
-            if (x, y) in visited or depth > max_depth:
+        blocked = set(self._get_wall_positions(quadrant))
+        for pos in player.snake.body[:-1]:
+            blocked.add((pos.x, pos.y))
+        for other in self.state.players.values():
+            if other.id != player.id and other.quadrant == quadrant:
+                if other.snake and other.snake.alive:
+                    for pos in other.snake.body:
+                        blocked.add((pos.x, pos.y))
+        return blocked
+
+    def _ai_safe_dirs(self, player: Player, bounds: QuadrantBounds,
+                      blocked: Set[Tuple[int, int]]) -> List[Direction]:
+        """Directions where the immediate next cell is in-bounds and unblocked."""
+        head = player.snake.body[0]
+        current = player.snake.direction
+        safe = []
+        for d, (dx, dy) in self._DIR_VECTORS.items():
+            if d == self._OPPOSITE.get(current):
                 continue
-            
-            # Check if valid
-            if not (bounds.x_min <= x < bounds.x_max and bounds.y_min <= y < bounds.y_max):
+            nx, ny = head.x + dx, head.y + dy
+            if (bounds.x_min <= nx < bounds.x_max
+                    and bounds.y_min <= ny < bounds.y_max
+                    and (nx, ny) not in blocked):
+                safe.append(d)
+        return safe
+
+    def _flood_fill_count(self, sx: int, sy: int, bounds: QuadrantBounds,
+                          blocked: Set[Tuple[int, int]], max_depth: int) -> int:
+        """BFS flood-fill counting reachable cells (uses deque for O(n) performance)."""
+        visited = {(sx, sy)}
+        q = deque()
+        q.append((sx, sy, 0))
+        if (not (bounds.x_min <= sx < bounds.x_max and bounds.y_min <= sy < bounds.y_max)
+                or (sx, sy) in blocked):
+            return 0
+        count = 1
+        while q:
+            x, y, depth = q.popleft()
+            if depth >= max_depth:
                 continue
-            if (x, y) in wall_positions or (x, y) in snake_positions:
-                continue
-            
-            visited.add((x, y))
-            count += 1
-            
-            # Add neighbors
-            for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-                queue.append((x + dx, y + dy, depth + 1))
-        
+            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                nx, ny = x + dx, y + dy
+                if (nx, ny) not in visited:
+                    visited.add((nx, ny))
+                    if (bounds.x_min <= nx < bounds.x_max
+                            and bounds.y_min <= ny < bounds.y_max
+                            and (nx, ny) not in blocked):
+                        count += 1
+                        q.append((nx, ny, depth + 1))
         return count
-    
-    def _ai_direction_to_food(self, player: Player, safe_directions: List[Direction],
-                               settings: dict = None) -> Direction:
-        """Find the best direction to move towards food, using difficulty-based food scoring"""
-        snake = player.snake
-        head = snake.body[0]
-        quadrant = player.quadrant
-        
-        if settings is None:
-            settings = AI_DIFFICULTY_SETTINGS.get(player.ai_difficulty, AI_DIFFICULTY_SETTINGS["amateur"])
-        
-        deterministic = settings.get("deterministic", False)
+
+    def _ai_bfs_to_food(self, hx: int, hy: int,
+                         target_cells: Set[Tuple[int, int]],
+                         bounds: QuadrantBounds,
+                         blocked: Set[Tuple[int, int]],
+                         max_depth: int) -> Optional[Direction]:
+        """BFS shortest path from head to any target cell; returns the first-step direction."""
+        visited = {(hx, hy)}
+        q = deque()
+        for d, (dx, dy) in self._DIR_VECTORS.items():
+            nx, ny = hx + dx, hy + dy
+            if (nx, ny) in target_cells:
+                return d
+            if ((nx, ny) not in visited
+                    and bounds.x_min <= nx < bounds.x_max
+                    and bounds.y_min <= ny < bounds.y_max
+                    and (nx, ny) not in blocked):
+                visited.add((nx, ny))
+                q.append((nx, ny, d, 1))
+        while q:
+            x, y, first_dir, depth = q.popleft()
+            if depth >= max_depth:
+                continue
+            for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in target_cells:
+                    return first_dir
+                if ((nx, ny) not in visited
+                        and bounds.x_min <= nx < bounds.x_max
+                        and bounds.y_min <= ny < bounds.y_max
+                        and (nx, ny) not in blocked):
+                    visited.add((nx, ny))
+                    q.append((nx, ny, first_dir, depth + 1))
+        return None
+
+    # ---- food selection (mode-aware) ----
+
+    def _ai_pick_food(self, player: Player, settings: dict,
+                      bounds: QuadrantBounds) -> Optional[Food]:
+        """Choose the best food target considering game mode, difficulty, and food state."""
+        foods = self.state.foods.get(player.quadrant, [])
+        if not foods:
+            return None
+
+        edible = [f for f in foods if f.hit_recovery <= 0]
+        if not edible:
+            edible = sorted(foods, key=lambda f: f.hit_recovery)[:1]
+        if not edible:
+            return None
+
+        head = player.snake.body[0]
+        mode = self.state.mode
         value_power = settings.get("value_power", 1.0)
         combo_aware = settings.get("combo_aware", False)
-        
-        foods = self.state.foods.get(quadrant, [])
-        if not foods:
-            return safe_directions[0] if deterministic else random.choice(safe_directions)
-        
-        # Pick the best food target using value^power / distance scoring
-        # Higher value_power makes the AI prefer high-value animals over close ones
-        current_combo = snake.combo if combo_aware else 0
-        best_food = None
-        best_food_score = -float('inf')
-        
-        for food in foods:
-            food_pos = food.position
-            distance = abs(head.x - food_pos.x) + abs(head.y - food_pos.y)
-            if distance == 0:
-                distance = 0.5
-            
-            # Base score: value^power / distance
-            effective_value = (food.value ** value_power) / distance
-            
-            # Combo-aware bonus: if we have a combo going, slightly prefer the nearest
-            # food to maintain the streak; if no combo yet, prefer high-value targets
-            if combo_aware and current_combo >= 2:
-                effective_value = effective_value * (1.0 + current_combo * 0.05)
-            
-            if effective_value > best_food_score:
-                best_food_score = effective_value
-                best_food = food
-        
-        if not best_food:
-            return safe_directions[0] if deterministic else random.choice(safe_directions)
-        
-        food_pos = best_food.position
-        
-        # Determine which safe direction reduces Manhattan distance to the chosen food most
-        best_direction = None
-        best_score = float('inf')
-        
-        dir_vectors = {
-            Direction.UP: (0, -1),
-            Direction.DOWN: (0, 1),
-            Direction.LEFT: (-1, 0),
-            Direction.RIGHT: (1, 0)
-        }
-        
-        for direction in safe_directions:
-            dx, dy = dir_vectors[direction]
-            new_x = head.x + dx
-            new_y = head.y + dy
-            new_distance = abs(new_x - food_pos.x) + abs(new_y - food_pos.y)
-            
-            if new_distance < best_score:
-                best_score = new_distance
-                best_direction = direction
-        
-        if best_direction:
-            return best_direction
-        
-        return safe_directions[0] if deterministic else random.choice(safe_directions)
+        survival_aware = settings.get("survival_awareness", False)
+        body_len = len(player.snake.body)
+
+        best = None
+        best_score = -1e9
+
+        for food in edible:
+            food_cells = food.get_all_positions()
+            dist = min(abs(head.x - p.x) + abs(head.y - p.y) for p in food_cells)
+            if dist == 0:
+                dist = 0.5
+
+            pts_per_hit = food.value / max(food.max_health, 1)
+
+            if mode == GameMode.SURVIVAL and survival_aware:
+                # Survival: eating resets decay timer -- prefer quick one-shot food.
+                # When body is short, urgency skyrockets.
+                urgency = 3.0 if body_len <= 5 else (1.5 if body_len <= 8 else 1.0)
+                if food.max_health == 1:
+                    score = (pts_per_hit ** value_power) / dist * 2.0 * urgency
+                else:
+                    score = (pts_per_hit ** value_power) / dist * 0.4 * urgency
+
+            elif mode == GameMode.HIGH_SCORE and combo_aware:
+                # High-score: maximise score-per-second. One-shot food = quick combo building.
+                combo_mult = 1.0 + player.snake.combo * 0.12
+                if food.max_health == 1:
+                    score = (pts_per_hit ** value_power) * combo_mult / dist * 1.8
+                else:
+                    score = (pts_per_hit ** value_power) / dist
+            else:
+                score = (pts_per_hit ** value_power) / dist
+
+            if score > best_score:
+                best_score = score
+                best = food
+
+        return best
+
+    # ---- core decision ----
+
+    def _ai_decide_direction(self, player: Player, settings: dict) -> Optional[Direction]:
+        """Score every safe direction and pick the best one."""
+        snake = player.snake
+        head = snake.body[0]
+        bounds = self.state.quadrant_bounds.get(player.quadrant)
+        if not bounds:
+            return None
+
+        blocked = self._ai_build_blocked(player)
+        safe_dirs = self._ai_safe_dirs(player, bounds, blocked)
+
+        if not safe_dirs:
+            return snake.direction
+        if len(safe_dirs) == 1:
+            return safe_dirs[0]
+
+        scores = {d: 0.0 for d in safe_dirs}
+
+        # ── 1. Space evaluation (flood fill or straight-line clearance) ──
+        if settings.get("dead_end_check", False):
+            flood_depth = settings.get("flood_fill_depth", 15)
+            flood = {}
+            for d in safe_dirs:
+                dx, dy = self._DIR_VECTORS[d]
+                flood[d] = self._flood_fill_count(
+                    head.x + dx, head.y + dy, bounds, blocked, flood_depth
+                )
+            max_flood = max(flood.values()) if flood else 1
+            if max_flood > 0:
+                threshold = max_flood * settings.get("dead_end_threshold", 0.3)
+                for d in safe_dirs:
+                    if flood[d] < threshold:
+                        scores[d] -= 10000
+                    else:
+                        scores[d] += (flood[d] / max_flood) * 60
+        else:
+            for d in safe_dirs:
+                dx, dy = self._DIR_VECTORS[d]
+                clear = 0
+                for step in range(1, 7):
+                    cx, cy = head.x + dx * step, head.y + dy * step
+                    if (bounds.x_min <= cx < bounds.x_max
+                            and bounds.y_min <= cy < bounds.y_max
+                            and (cx, cy) not in blocked):
+                        clear += 1
+                    else:
+                        break
+                scores[d] += clear * 8
+
+        # ── 2. Food targeting ──
+        food_seeking_chance = settings.get("food_seeking", 0.7)
+        seek_food = settings.get("deterministic", False) or random.random() < food_seeking_chance
+
+        if seek_food:
+            target = self._ai_pick_food(player, settings, bounds)
+            if target:
+                target_cells = set(
+                    (p.x, p.y) for p in target.get_all_positions()
+                )
+                nearest = min(target_cells,
+                              key=lambda c: abs(head.x - c[0]) + abs(head.y - c[1]))
+
+                bfs_dir = None
+                if settings.get("use_pathfinding", False):
+                    bfs_dir = self._ai_bfs_to_food(
+                        head.x, head.y, target_cells, bounds, blocked,
+                        max_depth=settings.get("pathfinding_depth", 40)
+                    )
+
+                if bfs_dir and bfs_dir in safe_dirs:
+                    scores[bfs_dir] += 300
+                else:
+                    for d in safe_dirs:
+                        dx, dy = self._DIR_VECTORS[d]
+                        nx, ny = head.x + dx, head.y + dy
+                        new_dist = abs(nx - nearest[0]) + abs(ny - nearest[1])
+                        old_dist = abs(head.x - nearest[0]) + abs(head.y - nearest[1])
+                        if new_dist < old_dist:
+                            scores[d] += 120
+                        elif new_dist == old_dist:
+                            scores[d] += 30
+
+        # ── 3. Survival urgency boost ──
+        if (settings.get("survival_awareness", False)
+                and self.state.mode == GameMode.SURVIVAL
+                and len(snake.body) <= 5):
+            for d in safe_dirs:
+                if scores[d] > 0:
+                    scores[d] *= 2.0
+
+        # ── 4. Prefer continuing straight (smooth movement) ──
+        if snake.direction in safe_dirs:
+            scores[snake.direction] += 10
+
+        # ── 5. Randomness (lower difficulties) ──
+        randomness = settings.get("randomness", 0)
+        if randomness > 0:
+            for d in safe_dirs:
+                scores[d] += random.uniform(0, randomness)
+
+        return max(safe_dirs, key=lambda d: scores[d])
     
     async def run_game_loop(self):
         """Main game loop"""
