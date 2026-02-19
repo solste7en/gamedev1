@@ -1,36 +1,83 @@
 # Python Gaming Platform
 
-A multi-game Python gaming platform featuring classic and modern games with both local (Pygame) and web-based (multiplayer) versions.
+A browser-based gaming platform featuring Snake and Brawler games, playable solo or with others on the same local network — no installation required for players.
 
-## Games Included
+## Games
 
-- **Snake Classic** - Traditional snake game with enhanced features
-- **Snake 3D** - 2.5D oblique-view version (Stardew Valley style)
-- **Brawler** - 2v2 Brawl Ball-style arena game
+- **Snake** — Multi-player snake with AI bots, survival and high-score modes, animal-hunting mechanics, and a persistent leaderboard
+- **Brawler** — 2v2 Brawl Ball-style arena game with four unique characters and AI opponents
 
-## Quick Start
+---
 
-### Local Games (Pygame)
+## Setup & Running
+
+### Requirements
+
+- Python 3.8+
+- Dependencies: `fastapi`, `uvicorn`, `websockets`
+
+### Start the Server
+
 ```bash
-pip install -r requirements.txt
-python main.py
-```
-
-### Web Multiplayer
-```bash
-# Create virtual environment
+# 1. Create and activate a virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate         # Windows
 
-# Install dependencies and run
+# 2. Install dependencies
 pip install -r requirements.txt
+
+# 3. Start the game server
 python -m web.server.main
 ```
 
-Then open `http://localhost:8000` in your browser. Share the Network URL with friends on the same WiFi to play together.
+The server will print something like:
 
-## Requirements
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
 
-- Python 3.8+
-- Pygame (for local games)
-- FastAPI, uvicorn, websockets (for web version)
+### Open the Game
+
+Open your browser and go to:
+
+```
+http://localhost:8000
+```
+
+---
+
+## Multiplayer on the Same Wi-Fi
+
+Any device on the same Wi-Fi network can join a game without installing anything — just a browser.
+
+1. **Find your local IP address** (on the host machine):
+   - macOS / Linux: run `ifconfig | grep "inet "` or `ipconfig getifaddr en0`
+   - Windows: run `ipconfig` and look for your IPv4 address
+   - Example: `192.168.1.42`
+
+2. **Share the address** with other players. They open:
+   ```
+   http://192.168.1.42:8000
+   ```
+
+3. **Create a room** from the home page. Share the room code with others so they can join.
+
+> The server must remain running on the host machine for the duration of play.
+
+---
+
+## Controls
+
+### Snake
+| Key | Action |
+|-----|--------|
+| Arrow keys or WASD | Move snake |
+
+### Brawler
+| Key | Action |
+|-----|--------|
+| WASD | Move |
+| Mouse | Aim |
+| Left-click | Attack |
+| E / Right-click | Ability |

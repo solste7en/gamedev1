@@ -59,6 +59,7 @@ class GameManager:
         # Get map size from room settings
         map_size_key = getattr(self.room, 'map_size', 'medium')
         map_config = MAP_SIZES.get(map_size_key, MAP_SIZES['medium'])
+        self.state.map_size = map_size_key
         base_width = map_config['width']
         base_height = map_config['height']
         

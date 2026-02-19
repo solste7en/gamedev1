@@ -281,6 +281,7 @@ class GameState:
     game_type: GameType = GameType.SNAKE_CLASSIC
     mode: GameMode = GameMode.SURVIVAL
     barrier_density: str = "none"  # none, sparse, moderate, dense
+    map_size: str = "medium"  # small, medium, large, extra_large
     
     # Grid settings
     grid_width: int = 40
@@ -334,6 +335,7 @@ class GameState:
             "game_type": self.game_type.value,
             "mode": self.mode.value,
             "barrier_density": self.barrier_density,
+            "map_size": self.map_size,
             "grid_width": self.grid_width,
             "grid_height": self.grid_height,
             "running": self.running,
@@ -358,27 +360,27 @@ class GameState:
 MAP_SIZES = {
     "small": {
         "name": "Small",
-        "width": 15,
-        "height": 12,
-        "description": "Tight quarters - Quick games"
+        "width": 25,
+        "height": 18,
+        "description": "Compact arenas - fast games"
     },
     "medium": {
         "name": "Medium",
-        "width": 25,
-        "height": 18,
+        "width": 35,
+        "height": 22,
         "description": "Balanced gameplay"
     },
     "large": {
         "name": "Large",
-        "width": 35,
-        "height": 22,
-        "description": "Room to roam"
+        "width": 45,
+        "height": 28,
+        "description": "Plenty of room to roam"
     },
     "extra_large": {
         "name": "Extra Large",
-        "width": 45,
-        "height": 28,
-        "description": "Wide open spaces"
+        "width": 60,
+        "height": 36,
+        "description": "Vast open arena"
     }
 }
 

@@ -20,6 +20,8 @@ export class SnakeGame {
         // Visual settings
         this.cellSize = 16;
         this.padding = 10;
+        this.focusedLayout = false;
+        this.focusPeek = 0;
         
         // Particle system
         this.particles = null;
@@ -119,10 +121,24 @@ export class SnakeGame {
         const quadrantHeight = this.gameState.quadrant_bounds[0]
             ? (this.gameState.quadrant_bounds[0].y_max - this.gameState.quadrant_bounds[0].y_min)
             : 20;
-        
-        // Labels render inside each quadrant's top area; 30px top offset + bottom padding
-        const width = cols * quadrantWidth * this.cellSize + this.padding * 2;
-        const height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
+
+        // For large/extra_large maps with multiple players, use a player-focused viewport:
+        // the current player's quadrant fills the canvas; adjacent quadrants peek in from the edges.
+        const FOCUSED_SIZES = ['large', 'extra_large'];
+        this.focusedLayout = FOCUSED_SIZES.includes(this.gameState.map_size) && numQuadrants > 1;
+
+        let width, height;
+        if (this.focusedLayout) {
+            // Show a fixed 64px peek strip of neighbouring quadrants on each axis
+            this.focusPeek = 64;
+            width  = quadrantWidth  * this.cellSize + this.focusPeek * 2 + this.padding * 2;
+            height = quadrantHeight * this.cellSize + this.focusPeek * 2 + this.padding * 2 + 30;
+        } else {
+            this.focusPeek = 0;
+            // Labels render inside each quadrant's top area; 30px top offset + bottom padding
+            width  = cols * quadrantWidth  * this.cellSize + this.padding * 2;
+            height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
+        }
         
         this.renderer.resize(width, height);
         this.renderer.setGrid(quadrantWidth * cols, quadrantHeight * rows, this.cellSize);
@@ -262,9 +278,22 @@ export class SnakeGame {
         if (!this.gameState) return;
         
         this.frameCount++;
-        
-        const contentOffsetX = this.padding;
-        const contentOffsetY = this.padding + 30;
+
+        let contentOffsetX = this.padding;
+        let contentOffsetY = this.padding + 30;
+
+        // In focused layout (large / extra_large multiplayer), shift the world so that
+        // the current player's quadrant is centered in the canvas with a peek strip around it.
+        if (this.focusedLayout) {
+            const myPlayer = this.gameState.players[this.playerId];
+            const myQuadrantIdx = myPlayer ? myPlayer.quadrant : 0;
+            const myBounds = this.gameState.quadrant_bounds[myQuadrantIdx];
+            if (myBounds) {
+                const peek = this.focusPeek || 0;
+                contentOffsetX = this.padding + peek - myBounds.x_min * this.cellSize;
+                contentOffsetY = this.padding + 30 + peek - myBounds.y_min * this.cellSize;
+            }
+        }
         
         // Step 1: Render static layer (backgrounds, grid, walls) - only once
         if (!this.graphicsCache.staticRendered) {
