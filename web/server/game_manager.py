@@ -49,6 +49,10 @@ class GameManager:
         
         # Total players including AI
         total_players = num_human_players + ai_count
+        # Treat as single player when only 1 person is playing (no AI, or mode explicitly set)
+        # This prevents survival win condition from firing immediately with only 1 player
+        if total_players <= 1 and self.state.mode == GameMode.SURVIVAL:
+            self.state.mode = GameMode.SINGLE_PLAYER
         is_single_player = self.state.mode == GameMode.SINGLE_PLAYER and ai_count == 0
         
         # Get map size from room settings
@@ -111,7 +115,7 @@ class GameManager:
             # Use per-AI difficulty if available, fallback to 'amateur'
             per_ai_difficulty = ai_difficulties[i] if i < len(ai_difficulties) else 'amateur'
             
-            ai_names_custom = room.ai_names if hasattr(room, 'ai_names') else []
+            ai_names_custom = self.room.ai_names if hasattr(self.room, 'ai_names') else []
             raw_name = ai_names_custom[i] if i < len(ai_names_custom) and ai_names_custom[i].strip() else None
             ai_name = raw_name or AI_NAMES[i % len(AI_NAMES)]
             ai_player = Player(
@@ -137,6 +141,10 @@ class GameManager:
         # Set mode-specific settings
         if self.state.mode == GameMode.SURVIVAL:
             self.state.next_shrink_time = self.state.shrink_interval
+            # Give every snake a full initial decay interval
+            for player in self.state.players.values():
+                if player.snake:
+                    player.snake.decay_timer = 6.0  # Starting interval
         elif self.state.mode == GameMode.HIGH_SCORE:
             # Set time limit based on room settings
             time_option = TIME_LIMIT_OPTIONS.get(self.room.time_limit, TIME_LIMIT_OPTIONS["1m"])
@@ -629,12 +637,51 @@ class GameManager:
                 new_speed = self.state.base_speed * (0.95 ** speed_increases)
                 self.state.current_speed = max(50, new_speed)
     
+    def _get_survival_decay_interval(self) -> float:
+        """Decay interval shrinks over time — more pressure as the game progresses."""
+        t = self.state.elapsed_time
+        if t < 30:   return 6.0
+        elif t < 60: return 5.0
+        elif t < 120: return 4.0
+        else:        return 3.0
+
+    def _apply_tail_decay(self, player: Player):
+        """Remove last tail segment; kill snake if body drops below minimum length."""
+        snake = player.snake
+        if not snake or not snake.alive:
+            return
+        if len(snake.body) > self.state.survival_decay_min_length:
+            snake.body.pop()
+        else:
+            # Too short — starved to death
+            self._kill_snake(player)
+
     def _update_survival(self, dt: float):
-        """Update survival mode specifics"""
-        # Shrink arena periodically
+        """Update survival mode: arena shrink + speed ramp + tail decay."""
+        # --- Arena shrink (existing) ---
         if self.state.elapsed_time >= self.state.next_shrink_time:
             self._shrink_arena()
             self.state.next_shrink_time += self.state.shrink_interval
+
+        # --- Speed ramp: every 15 s the snake moves ~5% faster ---
+        if self.state.elapsed_time >= self.state.survival_speed_next_increase:
+            new_speed = self.state.current_speed * self.state.survival_speed_factor
+            # Cap: no faster than 50 ms (2× base speed)
+            self.state.current_speed = max(self.state.base_speed * 0.5, new_speed)
+            self.state.survival_speed_next_increase += self.state.survival_speed_increase_interval
+
+        # --- Tail decay: each living snake loses a segment periodically ---
+        decay_interval = self._get_survival_decay_interval()
+        self.state.survival_decay_current_interval = decay_interval
+
+        for player in self.state.players.values():
+            if player.snake and player.snake.alive:
+                player.snake.decay_timer -= dt
+                if player.snake.decay_timer <= 0:
+                    self._apply_tail_decay(player)
+                    # Reset timer only if still alive after decay
+                    if player.snake and player.snake.alive:
+                        player.snake.decay_timer = decay_interval
     
     def _update_high_score(self, dt: float):
         """Update high score mode specifics"""
@@ -733,12 +780,16 @@ class GameManager:
                     barrier_config = BARRIER_CONFIGS.get(self.state.barrier_density, BARRIER_CONFIGS["none"])
                     score = int(score * barrier_config["multiplier"])
                     
-                    # Apply combo in high score mode or single player
-                    if self.state.mode in [GameMode.HIGH_SCORE, GameMode.SINGLE_PLAYER]:
+                    # Combo bonus (all modes)
+                    if self.state.mode in [GameMode.HIGH_SCORE, GameMode.SINGLE_PLAYER, GameMode.SURVIVAL]:
                         snake.combo += 1
                         snake.combo_timer = 2.0  # 2 second combo window
                         score = int(score * (1 + snake.combo * 0.1))  # 10% bonus per combo
-                    
+
+                    # Survival mode: eating food resets the decay timer
+                    if self.state.mode == GameMode.SURVIVAL:
+                        snake.decay_timer = self._get_survival_decay_interval()
+
                     snake.score += score
                     foods.remove(food)
                     self._spawn_food(player.quadrant)

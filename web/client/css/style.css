@@ -964,6 +964,61 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Survival Pressure HUD */
+#survival-pressure {
+    padding: 8px 14px;
+    min-width: 150px;
+    border-color: rgba(255, 165, 0, 0.25);
+}
+
+#survival-pressure.sp-critical {
+    animation: spPulse 0.6s ease infinite;
+}
+
+@keyframes spPulse {
+    0%, 100% { border-color: rgba(239, 68, 68, 0.3); }
+    50%       { border-color: rgba(239, 68, 68, 0.9); box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+}
+
+.sp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.sp-row:last-child { margin-bottom: 0; }
+
+.sp-icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+}
+
+.sp-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.sp-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--success);
+    transition: width 0.15s linear, background 0.4s ease;
+}
+
+.sp-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    min-width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
 /* Timer warning animation */
 #timer.warning {
     animation: timerWarning 0.5s ease infinite;

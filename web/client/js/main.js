@@ -447,8 +447,9 @@ class App {
             
             // Handle ready state for snake games
             if (this.currentRoom.game_type !== 'brawler') {
-                // For single player mode, automatically set ready so player can click Start
-                if (this.currentRoom.game_mode === 'single_player') {
+                // Auto-ready when returning to lobby if it's a solo/AI game
+                const isAutoReady = this.lobby.shouldAutoReady();
+                if (isAutoReady) {
                     // Small delay to let server process room reset first
                     setTimeout(() => {
                         this.network.setReady(true);

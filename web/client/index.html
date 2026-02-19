@@ -232,6 +232,7 @@
                 <div id="game-container">
                     <canvas id="game-canvas"></canvas>
                 </div>
+
                 <div id="animal-legend" class="legend-panel hidden">
                     <div class="legend-title">Animal Guide</div>
 
@@ -287,6 +288,19 @@
             </div>
             <div id="game-hud">
                 <div id="timer" class="hud-element">0:00</div>
+                <div id="survival-pressure" class="hud-element hidden">
+                    <div class="sp-row">
+                        <span class="sp-icon">🍽️</span>
+                        <div class="sp-bar-bg">
+                            <div id="decay-bar-fill" class="sp-bar-fill"></div>
+                        </div>
+                        <span id="decay-label" class="sp-value">6.0s</span>
+                    </div>
+                    <div class="sp-row">
+                        <span class="sp-icon">⚡</span>
+                        <span id="speed-indicator" class="sp-value">1.0×</span>
+                    </div>
+                </div>
                 <div id="scoreboard" class="hud-element"></div>
             </div>
             <div id="countdown-overlay" class="overlay hidden">

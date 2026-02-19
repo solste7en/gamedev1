@@ -184,6 +184,8 @@ class Snake:
     score: int = 0
     combo: int = 0
     combo_timer: float = 0
+    # Survival mode: time until next tail segment is lost (counts down each tick)
+    decay_timer: float = 6.0
     
     def to_dict(self):
         return {
@@ -193,7 +195,8 @@ class Snake:
             "color": self.color,
             "alive": self.alive,
             "score": self.score,
-            "combo": self.combo
+            "combo": self.combo,
+            "decay_timer": self.decay_timer
         }
 
 
@@ -271,6 +274,13 @@ class GameState:
     shrink_interval: float = 30  # Seconds between shrinks
     shrink_amount: int = 1  # Cells to shrink per interval
     next_shrink_time: float = 30
+    # Tail decay pressure
+    survival_decay_min_length: int = 3   # Min body length before death
+    survival_decay_current_interval: float = 6.0  # Active decay interval (sent to client for HUD)
+    # Speed ramp pressure
+    survival_speed_increase_interval: float = 15.0  # Seconds between ramps
+    survival_speed_factor: float = 0.95             # Multiply speed by this each ramp (5% faster)
+    survival_speed_next_increase: float = 15.0      # When next ramp fires
     
     # High score mode specifics
     speed_increase_interval: float = 60  # Seconds between speed increases
@@ -309,7 +319,9 @@ class GameState:
             "quadrant_bounds": {q: b.to_dict() for q, b in self.quadrant_bounds.items()},
             "walls": {q: [w.to_dict() for w in walls] for q, walls in self.walls.items()},
             "alive_count": self.alive_count,
-            "single_player_high_score": self.single_player_high_score
+            "single_player_high_score": self.single_player_high_score,
+            "survival_decay_current_interval": self.survival_decay_current_interval,
+            "survival_speed_next_increase": self.survival_speed_next_increase
         }
 
 

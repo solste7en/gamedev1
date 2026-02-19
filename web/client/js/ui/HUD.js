@@ -19,6 +19,12 @@ export class HUD {
         this.gameOverTitle = document.getElementById('game-over-title');
         this.finalScores = document.getElementById('final-scores');
         this.btnBackLobby = document.getElementById('btn-back-lobby');
+        
+        // Survival pressure indicators
+        this.survivalPressure = document.getElementById('survival-pressure');
+        this.decayBarFill = document.getElementById('decay-bar-fill');
+        this.decayLabel = document.getElementById('decay-label');
+        this.speedIndicator = document.getElementById('speed-indicator');
     }
     
     /**
@@ -173,6 +179,52 @@ export class HUD {
     }
     
     /**
+     * Update survival mode pressure indicators.
+     * @param {number} decayTimer   - Seconds remaining until next tail loss (for this player's snake)
+     * @param {number} decayInterval - Full interval length at the current game stage
+     * @param {number} speedMult    - Current speed multiplier (1.0 = normal, 2.0 = max)
+     */
+    updateSurvivalPressure(decayTimer, decayInterval, speedMult) {
+        if (!this.survivalPressure) return;
+        this.survivalPressure.classList.remove('hidden');
+
+        // Bar fill: full when timer is maxed, empty when at 0
+        const ratio = Math.max(0, Math.min(1, decayTimer / decayInterval));
+        const pct = (ratio * 100).toFixed(0);
+        this.decayBarFill.style.width = `${pct}%`;
+
+        // Color: green → yellow → red
+        if (ratio > 0.5) {
+            this.decayBarFill.style.background = 'var(--success)';
+        } else if (ratio > 0.25) {
+            this.decayBarFill.style.background = 'var(--warning)';
+        } else {
+            this.decayBarFill.style.background = 'var(--danger)';
+            // Pulse the panel when critical
+            this.survivalPressure.classList.add('sp-critical');
+        }
+        if (ratio > 0.25) {
+            this.survivalPressure.classList.remove('sp-critical');
+        }
+
+        this.decayLabel.textContent = `${Math.max(0, decayTimer).toFixed(1)}s`;
+        this.speedIndicator.textContent = `${speedMult.toFixed(2)}×`;
+
+        // Tint the speed indicator when noticeably fast
+        this.speedIndicator.style.color = speedMult >= 1.5 ? 'var(--danger)' :
+                                           speedMult >= 1.25 ? 'var(--warning)' : '';
+    }
+
+    /**
+     * Hide survival pressure indicators (non-survival modes)
+     */
+    hideSurvivalPressure() {
+        if (this.survivalPressure) {
+            this.survivalPressure.classList.add('hidden');
+        }
+    }
+
+    /**
      * Reset HUD
      */
     reset() {
@@ -181,6 +233,7 @@ export class HUD {
         this.scoreboard.innerHTML = '';
         this.hideCountdown();
         this.hideGameOver();
+        this.hideSurvivalPressure();
     }
     
     /**

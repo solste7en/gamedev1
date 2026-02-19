@@ -949,7 +949,15 @@ export class SnakeGame {
         if (!snake || !snake.body || snake.body.length === 0) return poolIndex;
         
         const baseColor = this.parseColor(snake.color);
-        const alpha = snake.alive ? 1 : 0.3;
+        const baseAlpha = snake.alive ? 1 : 0.3;
+        
+        // Survival decay warning: compute how urgent the decay is (0 = safe, 1 = critical)
+        let decayUrgency = 0;
+        if (this.gameState?.mode === 'survival' && snake.alive) {
+            const interval = this.gameState.survival_decay_current_interval || 6;
+            const timer = snake.decay_timer ?? interval;
+            decayUrgency = 1 - Math.max(0, Math.min(1, timer / interval));
+        }
         
         // Draw body segments from tail to head
         for (let i = snake.body.length - 1; i >= 0; i--) {
@@ -963,6 +971,19 @@ export class SnakeGame {
             // Calculate color gradient (brighter at head)
             const brightness = 0.6 + (1 - i / snake.body.length) * 0.4;
             const segColor = this.adjustBrightness(baseColor, brightness);
+            
+            // Decay warning: fade last few tail segments when timer is low.
+            // The more urgent, the more segments are affected and the more they pulse.
+            let alpha = baseAlpha;
+            if (decayUrgency > 0.4 && snake.alive) {
+                // Tail segments to warn: scales from 1 (mild) up to 4 (critical)
+                const warnCount = Math.floor(decayUrgency * 5);
+                const segFromTail = snake.body.length - 1 - i; // 0 = tail end
+                if (segFromTail < warnCount) {
+                    const pulse = 0.35 + 0.65 * Math.abs(Math.sin(this.frameCount * 0.18 + segFromTail * 0.5));
+                    alpha = baseAlpha * pulse;
+                }
+            }
             
             const graphics = this.getPooledSnakeGraphics(poolIndex);
             graphics.clear();
@@ -1139,6 +1160,19 @@ export class SnakeGame {
         );
         
         this.hud.updateScoreboard(this.gameState.players);
+
+        // Survival pressure: decay bar + speed indicator
+        if (this.gameState.mode === 'survival') {
+            const myPlayer = this.gameState.players[this.playerId];
+            const decayTimer = myPlayer?.snake?.decay_timer ?? 6;
+            const decayInterval = this.gameState.survival_decay_current_interval || 6;
+            const baseSpeed = 100; // ms
+            const currentSpeed = this.gameState.current_speed || baseSpeed;
+            const speedMult = baseSpeed / currentSpeed;
+            this.hud.updateSurvivalPressure(decayTimer, decayInterval, speedMult);
+        } else {
+            this.hud.hideSurvivalPressure();
+        }
     }
     
     /**
