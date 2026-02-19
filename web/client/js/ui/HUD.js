@@ -196,31 +196,27 @@ export class HUD {
      * @param {number} decayTimer   - Seconds remaining until next tail loss (for this player's snake)
      * @param {number} decayInterval - Full interval length at the current game stage
      * @param {number} speedMult    - Current speed multiplier (1.0 = normal, 2.0 = max)
+     * @deprecated Use updateSurvivalSpeed() instead; per-player decay bars are now drawn in-canvas.
      */
     updateSurvivalPressure(decayTimer, decayInterval, speedMult) {
+        this.updateSurvivalSpeed(speedMult);
+    }
+
+    /**
+     * Show global speed multiplier in the HUD (Survival mode).
+     * Per-player decay/hunger bars are rendered directly on the game canvas.
+     * @param {number} speedMult - Current speed multiplier (1.0 = normal)
+     */
+    updateSurvivalSpeed(speedMult) {
         if (!this.survivalPressure) return;
         this.survivalPressure.classList.remove('hidden');
 
-        // Bar fill: full when timer is maxed, empty when at 0
-        const ratio = Math.max(0, Math.min(1, decayTimer / decayInterval));
-        const pct = (ratio * 100).toFixed(0);
-        this.decayBarFill.style.width = `${pct}%`;
-
-        // Color: green → yellow → red
-        if (ratio > 0.5) {
-            this.decayBarFill.style.background = 'var(--success)';
-        } else if (ratio > 0.25) {
-            this.decayBarFill.style.background = 'var(--warning)';
-        } else {
-            this.decayBarFill.style.background = 'var(--danger)';
-            // Pulse the panel when critical
-            this.survivalPressure.classList.add('sp-critical');
-        }
-        if (ratio > 0.25) {
-            this.survivalPressure.classList.remove('sp-critical');
+        // Hide the per-player decay bar row (it's now drawn per-quadrant in-canvas)
+        if (this.decayBarFill) {
+            const decayRow = this.decayBarFill.closest('.sp-row');
+            if (decayRow) decayRow.style.display = 'none';
         }
 
-        this.decayLabel.textContent = `${Math.max(0, decayTimer).toFixed(1)}s`;
         this.speedIndicator.textContent = `${speedMult.toFixed(2)}×`;
 
         // Tint the speed indicator when noticeably fast

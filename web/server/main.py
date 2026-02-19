@@ -10,10 +10,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 import uvicorn
 
+try:
+    # websockets ≥ 10 exposes ConnectionClosedError at the top level
+    from websockets.exceptions import ConnectionClosedError as _WSConnectionClosedError
+except ImportError:
+    _WSConnectionClosedError = None
+
 from .websocket import connection_manager
 
 
-app = FastAPI(title="Snake Multiplayer Server", version="0.2.0")
+VERSION = "0.4.0"
+
+app = FastAPI(title="Snake Multiplayer Server", version=VERSION)
 
 # Get the client directory path
 CLIENT_DIR = Path(__file__).parent.parent / "client"
@@ -45,7 +53,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "0.2.0"}
+    return {"status": "healthy", "version": VERSION}
 
 
 @app.websocket("/ws")
@@ -60,10 +68,21 @@ async def websocket_endpoint(websocket: WebSocket):
             player_id = await connection_manager.handle_message(websocket, player_id, data)
     
     except WebSocketDisconnect:
+        # Normal disconnect (client sent close frame)
         if player_id != -1:
             await connection_manager.disconnect(player_id)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        # Silently swallow keepalive ping timeouts and other abrupt disconnects —
+        # these are normal when a browser tab is closed or the network drops.
+        # Re-raise anything that is genuinely unexpected.
+        is_abrupt_disconnect = (
+            "keepalive ping timeout" in str(e)
+            or "no close frame received" in str(e)
+            or "ConnectionClosed" in type(e).__name__
+            or (_WSConnectionClosedError is not None and isinstance(e, _WSConnectionClosedError))
+        )
+        if not is_abrupt_disconnect:
+            print(f"WebSocket error (player {player_id}): {e}")
         if player_id != -1:
             await connection_manager.disconnect(player_id)
 
@@ -71,7 +90,6 @@ async def websocket_endpoint(websocket: WebSocket):
 def get_local_ip():
     """Get the local IP address for LAN play"""
     try:
-        # Connect to an external address to find local IP
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
@@ -89,7 +107,7 @@ def main():
     local_ip = get_local_ip()
     
     print("\n" + "=" * 60)
-    print("  🐍 Snake Multiplayer Server v0.2.0")
+    print(f"  🐍 Snake Multiplayer Server v{VERSION}")
     print("=" * 60)
     print(f"\n  Local URL:    http://localhost:{port}")
     print(f"  Network URL:  http://{local_ip}:{port}")

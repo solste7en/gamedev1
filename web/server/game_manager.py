@@ -153,8 +153,15 @@ class GameManager:
             self._setup_snake_for_player(player, player_index, is_battle_royale)
             player_index += 1
         
-        # Create AI players
+        # Create AI players — pick names without repetition (shuffle a copy of the pool)
         self._next_ai_id = -1  # AI players get negative IDs
+        _ai_name_pool = random.sample(AI_NAMES, min(ai_count, len(AI_NAMES)))
+        # If we need more than the pool size, pad with more random picks
+        while len(_ai_name_pool) < ai_count:
+            _ai_name_pool.append(random.choice(AI_NAMES))
+        
+        _difficulty_pool = ['amateur', 'semi_pro', 'pro', 'world_class']
+        
         for i in range(ai_count):
             if is_battle_royale:
                 ai_quadrant = 0  # All AI in quadrant 0 for Battle Royale
@@ -162,12 +169,15 @@ class GameManager:
                 ai_quadrant = self._get_next_quadrant(used_quadrants, total_players)
             used_quadrants.add(ai_quadrant)
             
-            # Use per-AI difficulty if available, fallback to 'amateur'
-            per_ai_difficulty = ai_difficulties[i] if i < len(ai_difficulties) else 'amateur'
+            # Use per-AI difficulty if explicitly set; otherwise pick randomly
+            if i < len(ai_difficulties) and ai_difficulties[i]:
+                per_ai_difficulty = ai_difficulties[i]
+            else:
+                per_ai_difficulty = random.choice(_difficulty_pool)
             
             ai_names_custom = self.room.ai_names if hasattr(self.room, 'ai_names') else []
             raw_name = ai_names_custom[i] if i < len(ai_names_custom) and ai_names_custom[i].strip() else None
-            ai_name = raw_name or AI_NAMES[i % len(AI_NAMES)]
+            ai_name = raw_name or _ai_name_pool[i]
             ai_player = Player(
                 id=self._next_ai_id,
                 name=ai_name,

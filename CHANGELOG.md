@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-10
+
+### Added
+- **Battle Royale mode**: up to 6 players on a shared map; 3–4 food items simultaneously; only killing hits score; half-length respawn penalty (min 3); same Fibonacci respawn delay as High Score mode; timed match, highest score wins
+- **Spawn freeze (all modes)**: 1-second invulnerability window after respawn and at game start — snake glows white and cannot move or be hit
+- **Per-player hunger bars**: individual decay/hunger bars rendered inside each player's quadrant in Survival mode; global speed multiplier shown separately in the HUD
+- **Map size expansion**: four new sizes — Small (25×18), Medium (35×22, default), Large (45×28), Extra Large (60×36)
+- **Leaderboard top-500** with pagination (50 per page) and extended color tiers for top 3, 10, 30, 50, and 100
+- **Leaderboard unique-player filter**: toggle checkbox to show only each player's personal best
+- **Fibonacci respawn penalty** in High Score mode — each death adds a progressively longer respawn delay (2s, 3s, 5s, 8s, 13s, 21s…)
+- **Hybrid scoring system**: small animals now yield 60–100 pts; per-category hit-recovery cooldowns (0.8s / 1.5s / 2.5s) prevent instant multi-hit farming; combo bonus on killing hit
+- **AI bot names**: randomly selected from a pool of 100 top soccer players (post-2000) — different each session, re-rollable with the dice button
+- **Reroll button** (🎲) on AI cards simultaneously randomises both the bot's name and skill level
+- **Remove bot button** (✕) on AI cards allows removing a bot and updates the count dropdown automatically
+- **Click-to-reroll**: clicking an AI bot's name in the lobby re-rolls it to a new random name
+- **Random initial AI skill levels**: bots no longer default to Amateur; each starts at a randomly assigned level
+
+### Changed
+- Survival mode speed multiplier now correctly resets to 1× on every new game
+- AI bots significantly improved at all levels — higher levels use BFS flood-fill dead-end avoidance, `value_power` scoring, and mode-aware tactics (Survival vs High Score vs Battle Royale)
+- Pro and World-Class AI levels dialled back slightly: Pro ≈ previous Semi-Pro+, World-Class ≈ previous Pro
+- Countdown overlay is fully transparent — game map and player positions are clearly visible before the match begins (all modes)
+- All modes default to 2 AI bots on new room creation
+- Battle Royale defaults to Large map; "None" and "1 Bot" AI count options are grayed out in this mode
+- Brawler game marked as "In Dev" on the home page and in the Brawler lobby title
+- Removed "Create Multiplayer" button — single-player and multiplayer both use the same "Start Game" / "Join Room" flow
+- In-game animal legend updated to reflect the new hybrid scoring scheme with point values per animal
+
+### Fixed
+- WebSocket `ConnectionClosedError` (keepalive ping timeout) no longer printed as a noisy server error — abrupt client disconnects (closed tab, network drop) are now handled silently
+- Ready button no longer stops working after a game ends; server syncs ready state on every room update
+- AI bot name input no longer resets cursor position on each keystroke
+- Speed multiplier no longer carries over from a previous Survival game session
+- Gray screen on solo Survival game entry resolved
+- 404 not found errors for `/favicon.ico` resolved via inline SVG favicon
+- AI bot cards: reroll (🎲) and remove (✕) buttons no longer overlap
+
+### Technical
+- Version constant centralised in `main.py` (`VERSION = "0.4.0"`) — used by both the health endpoint and startup banner
+- `websockets.exceptions.ConnectionClosedError` now caught and suppressed at the WebSocket endpoint level
+
+---
+
 ## [0.3.2] - 2026-02-10
 
 ### Added
@@ -185,6 +228,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[0.4.0]: https://github.com/username/project/releases/tag/v0.4.0
+[0.3.2]: https://github.com/username/project/releases/tag/v0.3.2
 [0.3.1]: https://github.com/username/project/releases/tag/v0.3.1
 [0.3.0]: https://github.com/username/project/releases/tag/v0.3.0
 [0.2.0]: https://github.com/username/project/releases/tag/v0.2.0

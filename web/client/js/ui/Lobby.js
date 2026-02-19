@@ -6,7 +6,7 @@ const AI_ICONS = ['🤖', '🐍', '👾', '🎮', '🦾', '🧠', '👻', '🔥'
 const AI_DIFF_LEVELS = ['amateur', 'semi_pro', 'pro', 'world_class'];
 const AI_DIFF_LABELS = { amateur: 'Amateur', semi_pro: 'Semi-Pro', pro: 'Pro', world_class: 'World-Class' };
 
-// Default bot names — top soccer players post-2000 (shuffled order so bots feel varied)
+// Full pool of bot names — top soccer players post-2000
 const AI_DEFAULT_NAMES = [
     'Messi', 'Ronaldo', 'Neymar', 'Mbappé', 'Lewandowski',
     'Modric', 'Salah', 'De Bruyne', 'Benzema', 'Kane',
@@ -17,7 +17,24 @@ const AI_DEFAULT_NAMES = [
     'Firmino', 'Mané', 'Son', 'Griezmann', 'Ibrahimović',
     'Cavani', 'Falcao', 'Henry', 'Kaka', 'Ronaldinho',
     'Tevez', 'Thiago', 'Verratti', 'Dybala', 'Lukaku',
+    'Shevchenko', 'Del Piero', 'Totti', 'Nedvěd', 'Lahm',
+    'Götze', 'Klose', 'Kompany', 'Vidic', 'Ferdinand',
+    'Silva', 'Buffon', 'Casillas', 'Fabregas', 'Rakitić',
+    'Busquets', 'Villa', 'Torres', 'Forlan', 'Balotelli',
+    'Oscar', 'Willian', 'Coutinho', 'Hulk', 'Bernard',
 ];
+
+/** Pick a random name from the pool, optionally excluding names already used */
+function randomAIName(usedNames = []) {
+    const available = AI_DEFAULT_NAMES.filter(n => !usedNames.includes(n));
+    const pool = available.length > 0 ? available : AI_DEFAULT_NAMES;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** Pick a random difficulty level */
+function randomAIDifficulty() {
+    return AI_DIFF_LEVELS[Math.floor(Math.random() * AI_DIFF_LEVELS.length)];
+}
 
 export class Lobby {
     constructor(networkManager) {
@@ -80,7 +97,7 @@ export class Lobby {
         
         this.selectGameMode.addEventListener('change', () => {
             this.updateSettings();
-            this.updateTimeLimitVisibility();
+            this.updateTimeLimitVisibility(true);  // modeJustChanged = true
         });
         this.selectBarrierDensity.addEventListener('change', () => this.updateSettings());
         this.selectMapSize.addEventListener('change', () => this.updateSettings());
@@ -107,8 +124,24 @@ export class Lobby {
         
         // Reset aiConfigs and sync from room
         this.aiConfigs = [];
+        
+        // Default new rooms to 2 AI bots (host only, no existing bots set)
+        let effectiveAiCount = room.ai_count || 0;
+        if (isNewRoom && this.isHost && effectiveAiCount === 0) {
+            effectiveAiCount = 2;
+            // Push the default to the server immediately
+            setTimeout(() => {
+                if (this.selectAICount) {
+                    this.selectAICount.value = '2';
+                    this.syncAIConfigs();
+                    this.updateSettings();
+                    this.updatePlayerList();
+                }
+            }, 0);
+        }
+        
         if (this.selectAICount) {
-            this.selectAICount.value = (room.ai_count || 0).toString();
+            this.selectAICount.value = effectiveAiCount.toString();
         }
         this.syncAIConfigs(room.ai_difficulties || [], room.ai_names || []);
         
@@ -173,23 +206,24 @@ export class Lobby {
         // Grow or shrink the array
         while (this.aiConfigs.length < aiCount) {
             const i = this.aiConfigs.length;
+            const usedNames = this.aiConfigs.map(c => c.name);
             this.aiConfigs.push({
-                name: AI_DEFAULT_NAMES[i % AI_DEFAULT_NAMES.length],
-                icon: AI_ICONS[i % AI_ICONS.length],
-                difficulty: (serverDifficulties && serverDifficulties[i]) || 'amateur'
+                name: randomAIName(usedNames),
+                icon: AI_ICONS[Math.floor(Math.random() * AI_ICONS.length)],
+                difficulty: randomAIDifficulty()
             });
         }
         this.aiConfigs.length = aiCount;
         
-        // Apply server values if given (sync from room state)
+        // Apply server values if given (sync from room state) — only override if non-empty
         if (serverDifficulties) {
             serverDifficulties.forEach((d, i) => {
-                if (this.aiConfigs[i]) this.aiConfigs[i].difficulty = d;
+                if (this.aiConfigs[i] && d) this.aiConfigs[i].difficulty = d;
             });
         }
         if (serverNames) {
             serverNames.forEach((n, i) => {
-                if (this.aiConfigs[i]) this.aiConfigs[i].name = n;
+                if (this.aiConfigs[i] && n) this.aiConfigs[i].name = n;
             });
         }
     }
@@ -204,6 +238,19 @@ export class Lobby {
         if (btn) btn.textContent = this.aiConfigs[index].icon;
     }
     
+    /**
+     * Remove an AI bot by index, update dropdown and re-render
+     */
+    removeAIBot(index) {
+        this.aiConfigs.splice(index, 1);
+        const newCount = this.aiConfigs.length;
+        if (this.selectAICount) {
+            this.selectAICount.value = String(newCount);
+        }
+        this.updateSettings();
+        this.updatePlayerList();
+    }
+
     /**
      * Cycle the difficulty for an AI bot - updates in-place to avoid input cursor loss
      */
@@ -271,10 +318,11 @@ export class Lobby {
         for (let i = 0; i < aiCount; i++) {
             // Ensure config exists
             if (!this.aiConfigs[i]) {
+                const usedNames = this.aiConfigs.filter(Boolean).map(c => c.name);
                 this.aiConfigs[i] = {
-                    name: AI_DEFAULT_NAMES[i % AI_DEFAULT_NAMES.length],
-                    icon: AI_ICONS[i % AI_ICONS.length],
-                    difficulty: (this.room.ai_difficulties && this.room.ai_difficulties[i]) || 'amateur'
+                    name: randomAIName(usedNames),
+                    icon: AI_ICONS[Math.floor(Math.random() * AI_ICONS.length)],
+                    difficulty: (this.room.ai_difficulties && this.room.ai_difficulties[i]) || randomAIDifficulty()
                 };
             }
             const cfg = this.aiConfigs[i];
@@ -288,28 +336,52 @@ export class Lobby {
                 card.innerHTML = `
                     <button class="ai-icon-btn" title="Click to change icon">${cfg.icon}</button>
                     <div class="player-details">
-                        <input class="ai-name-input" data-ai-idx="${i}" value="${this.escapeHtml(cfg.name)}" maxlength="12" placeholder="Bot name…" />
+                        <div class="ai-name-row">
+                            <input class="ai-name-input" data-ai-idx="${i}" value="${this.escapeHtml(cfg.name)}" maxlength="16" placeholder="Bot name…" />
+                            <button class="ai-reroll-btn" title="Random new name">🎲</button>
+                        </div>
                         <div class="ai-skill-row">
                             <span class="ai-skill-label">Level:</span>
                             <button class="ai-diff-badge ${diffClass}" title="Click to cycle difficulty">↻ ${diffLabel}</button>
                         </div>
                     </div>
+                    <button class="ai-remove-btn" title="Remove this bot">✕</button>
                 `;
                 
-                const iconBtn = card.querySelector('.ai-icon-btn');
+                const iconBtn   = card.querySelector('.ai-icon-btn');
                 const nameInput = card.querySelector('.ai-name-input');
-                const diffBtn = card.querySelector('.ai-diff-badge');
+                const rerollBtn = card.querySelector('.ai-reroll-btn');
+                const diffBtn   = card.querySelector('.ai-diff-badge');
+                const removeBtn = card.querySelector('.ai-remove-btn');
                 
                 // Capture index for closures
                 const idx = i;
                 iconBtn.addEventListener('click', (e) => this.cycleAIIcon(idx, e.currentTarget));
                 nameInput.addEventListener('input', (e) => {
                     this.aiConfigs[idx].name = e.target.value;
-                    // Debounce server sync to avoid round-trip on every keystroke
                     clearTimeout(this._nameDebounceTimer);
                     this._nameDebounceTimer = setTimeout(() => this.updateSettings(), 600);
                 });
+                rerollBtn.addEventListener('click', () => {
+                    // Randomize name
+                    const usedNames = this.aiConfigs.map((c, j) => j !== idx ? c.name : null).filter(Boolean);
+                    const newName = randomAIName(usedNames);
+                    this.aiConfigs[idx].name = newName;
+                    nameInput.value = newName;
+                    
+                    // Randomize difficulty (in-place update of the badge to avoid re-render)
+                    const newDiff = randomAIDifficulty();
+                    this.aiConfigs[idx].difficulty = newDiff;
+                    const newLabel = AI_DIFF_LABELS[newDiff];
+                    const newClass = 'diff-' + newDiff.replace('_', '-');
+                    diffBtn.textContent = `↻ ${newLabel}`;
+                    diffBtn.className = `ai-diff-badge ${newClass}`;
+                    
+                    clearTimeout(this._nameDebounceTimer);
+                    this._nameDebounceTimer = setTimeout(() => this.updateSettings(), 300);
+                });
                 diffBtn.addEventListener('click', (e) => this.cycleAIDifficulty(idx, e.currentTarget));
+                removeBtn.addEventListener('click', () => this.removeAIBot(idx));
             } else {
                 card.innerHTML = `
                     <div class="player-avatar" style="background-color:#555">${cfg.icon}</div>
@@ -372,27 +444,29 @@ export class Lobby {
     }
     
     /**
-     * Show/hide time limit based on game mode
+     * Show/hide time limit based on game mode.
+     * @param {boolean} modeJustChanged - pass true when the user actually changed the mode dropdown
      */
-    updateTimeLimitVisibility() {
+    updateTimeLimitVisibility(modeJustChanged = false) {
         // Show time limit for high_score and battle_royale modes
         if (this.timeLimitRow) {
             const mode = this.selectGameMode.value;
             this.timeLimitRow.style.display = 
                 (mode === 'high_score' || mode === 'battle_royale') ? 'flex' : 'none';
         }
-        this.updateMapSizeOptions();
+        this.updateMapSizeOptions(modeJustChanged);
     }
     
     /**
-     * Update map size and AI count options based on game mode
+     * Update map size and AI count options based on game mode.
+     * @param {boolean} modeJustChanged - true when called because the user just switched modes
      */
-    updateMapSizeOptions() {
+    updateMapSizeOptions(modeJustChanged = false) {
         if (!this.selectMapSize) return;
         const mode = this.selectGameMode.value;
         const isBattleRoyale = mode === 'battle_royale';
         
-        // Battle Royale: disable small map
+        // Battle Royale: disable small map, default to large
         const smallOption = this.selectMapSize.querySelector('option[value="small"]');
         if (smallOption) {
             smallOption.disabled = isBattleRoyale;
@@ -401,15 +475,31 @@ export class Lobby {
             }
         }
         
-        // Battle Royale allows up to 5 AI bots (6 total); other modes capped at 3
+        // AI count limits: Battle Royale = 2–5 bots (min 3 players); others = 0–3 bots
         if (this.selectAICount) {
-            const brOnlyOptions = this.selectAICount.querySelectorAll('.br-only');
-            brOnlyOptions.forEach(opt => {
-                opt.disabled = !isBattleRoyale;
+            const allOptions = this.selectAICount.querySelectorAll('option');
+            allOptions.forEach(opt => {
+                const val = parseInt(opt.value);
+                if (isBattleRoyale) {
+                    // Gray out 0 and 1 bot (need at least 2 for min-3-player requirement)
+                    opt.disabled = val < 2;
+                    // Also disable 4/5 if already controlled by br-only class below
+                } else {
+                    // Other modes: disable 4 and 5 bot options (BR-only)
+                    opt.disabled = val > 3;
+                }
             });
-            // If mode changed away from BR and a BR-only count is selected, cap at 3
-            if (!isBattleRoyale && parseInt(this.selectAICount.value) > 3) {
+            
+            const currentVal = parseInt(this.selectAICount.value);
+            if (!isBattleRoyale && currentVal > 3) {
                 this.selectAICount.value = '3';
+                this.syncAIConfigs();
+            }
+            // When switching TO Battle Royale, enforce minimum 2 bots
+            if (isBattleRoyale && modeJustChanged && currentVal < 2) {
+                this.selectAICount.value = '2';
+                this.syncAIConfigs();
+                this.updatePlayerList();
             }
         }
     }

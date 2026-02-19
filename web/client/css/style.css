@@ -492,6 +492,8 @@ body {
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(255, 255, 255, 0.12);
     gap: 10px;
+    position: relative; /* needed for absolute-positioned remove button */
+    padding-right: 32px; /* leave room for the ✕ remove button without overlap */
 }
 
 .ai-icon-btn {
@@ -515,6 +517,15 @@ body {
     transform: scale(1.1);
 }
 
+/* Name row: input + reroll button side by side */
+.ai-name-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+    width: 100%;
+}
+
 .ai-name-input {
     background: var(--bg-medium);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -523,8 +534,8 @@ body {
     font-size: 14px;
     font-weight: 600;
     padding: 4px 8px;
-    width: 100%;
-    margin-bottom: 4px;
+    flex: 1;
+    min-width: 0;
     outline: none;
     transition: border-color 0.15s;
 }
@@ -532,6 +543,61 @@ body {
 .ai-name-input:focus {
     border-color: var(--primary);
 }
+
+/* Dice/reroll button next to name */
+.ai-reroll-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: var(--bg-medium);
+    color: var(--text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.15s, transform 0.1s, color 0.15s;
+    padding: 0;
+    line-height: 1;
+}
+
+.ai-reroll-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: rotate(20deg) scale(1.1);
+}
+
+/* Remove (✕) button — right-center of AI card */
+.ai-remove-btn {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: background 0.15s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.ai-remove-btn:hover {
+    background: rgba(239, 68, 68, 0.5);
+    transform: translateY(-50%) scale(1.15);
+}
+
 
 /* AI skill row — wraps the "Level:" label + diff badge */
 .ai-skill-row {
@@ -723,6 +789,14 @@ body {
     font-size: 10px;
     color: #94A3B8;
     white-space: nowrap;
+}
+
+.legend-item em {
+    font-style: normal;
+    font-size: 9px;
+    color: #F59E0B;
+    margin-left: auto;
+    padding-left: 3px;
 }
 
 .legend-dot {

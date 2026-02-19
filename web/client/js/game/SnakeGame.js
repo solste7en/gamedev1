@@ -36,6 +36,7 @@ export class SnakeGame {
             snakeGraphics: [],       // Pool of graphics for snake segments
             foodGraphics: [],        // Pool of graphics for food items
             textObjects: new Map(),  // Cached text objects by key
+            decayBarGraphics: new Map(), // Per-player decay bar graphics (key = playerId)
         };
         
         // Track what was rendered last frame for change detection
@@ -172,6 +173,8 @@ export class SnakeGame {
         this.graphicsCache.foodGraphics = [];
         this.graphicsCache.textObjects.forEach(t => t.destroy());
         this.graphicsCache.textObjects.clear();
+        this.graphicsCache.decayBarGraphics.forEach(g => g.destroy());
+        this.graphicsCache.decayBarGraphics.clear();
         
         // Reset render state
         this.lastRenderState = {
@@ -344,6 +347,15 @@ export class SnakeGame {
                     fontWeight: 'bold'
                 }
             );
+            
+            // Per-player hunger (decay) bar in Survival mode
+            if (this.gameState.mode === 'survival') {
+                this._drawPlayerDecayBar(playerId, player, quadrantX, quadrantY, quadrantWidth, contentOffsetX, contentOffsetY);
+            } else {
+                // Hide if not survival mode
+                const dbg = this.graphicsCache.decayBarGraphics.get(String(playerId));
+                if (dbg) dbg.visible = false;
+            }
             
             // Draw food (pooled)
             const foods = this.gameState.foods[player.quadrant] || [];
@@ -584,6 +596,74 @@ export class SnakeGame {
         }
     }
     
+    /**
+     * Draw a per-player decay (hunger) bar in Survival mode.
+     * Bar sits just below the player name label, inside their quadrant.
+     */
+    _drawPlayerDecayBar(playerId, player, quadrantX, quadrantY, quadrantWidth, offsetX, offsetY) {
+        const key = String(playerId);
+        let g = this.graphicsCache.decayBarGraphics.get(key);
+        if (!g) {
+            g = new PIXI.Graphics();
+            this.renderer.gameContainer.addChild(g);
+            this.graphicsCache.decayBarGraphics.set(key, g);
+        }
+        g.clear();
+        g.visible = true;
+
+        const snake = player.snake;
+        const isAlive = snake && snake.alive;
+        const interval = this.gameState.survival_decay_current_interval || 6;
+        const timer = (snake && snake.decay_timer != null) ? snake.decay_timer : interval;
+        const ratio = Math.max(0, Math.min(1, timer / interval));
+
+        // Bar dimensions — sits right below the name label
+        const barW = Math.min(80, quadrantWidth * 0.4);
+        const barH = 5;
+        const barX = quadrantX + 4;
+        const barY = quadrantY + 20;
+
+        if (!isAlive) {
+            // Ghost bar when dead
+            g.beginFill(0x334155, 0.5);
+            g.drawRoundedRect(barX, barY, barW, barH, 2);
+            g.endFill();
+            return;
+        }
+
+        // Background track
+        g.beginFill(0x1E293B, 0.8);
+        g.drawRoundedRect(barX - 1, barY - 1, barW + 2, barH + 2, 3);
+        g.endFill();
+
+        // Filled portion
+        let fillColor;
+        if (ratio > 0.5)       fillColor = 0x22C55E;   // green
+        else if (ratio > 0.25) fillColor = 0xF59E0B;   // amber
+        else                   fillColor = 0xEF4444;   // red
+
+        // Pulse when critical
+        let fillAlpha = 1.0;
+        if (ratio <= 0.25) {
+            fillAlpha = 0.5 + 0.5 * Math.abs(Math.sin(this.frameCount * 0.15));
+        }
+
+        const filledW = Math.max(2, barW * ratio);
+        g.beginFill(fillColor, fillAlpha);
+        g.drawRoundedRect(barX, barY, filledW, barH, 2);
+        g.endFill();
+
+        // Fork icon + timer label via cached text
+        const labelText = `🍽 ${Math.max(0, timer).toFixed(1)}s`;
+        this.updateCachedText(
+            `decay_label_${playerId}`,
+            labelText,
+            barX + barW + 4,
+            barY - 1,
+            { fontSize: 9, fill: ratio > 0.25 ? 0xCBD5E1 : 0xEF4444 }
+        );
+    }
+
     /**
      * Draw animal using pooled graphics (returns next available index)
      */
@@ -1210,15 +1290,13 @@ export class SnakeGame {
         
         this.hud.updateScoreboard(this.gameState.players);
 
-        // Survival pressure: decay bar + speed indicator
+        // Survival mode: show global speed multiplier in HUD.
+        // Per-player decay bars are drawn in-canvas by _drawPlayerDecayBar().
         if (this.gameState.mode === 'survival') {
-            const myPlayer = this.gameState.players[this.playerId];
-            const decayTimer = myPlayer?.snake?.decay_timer ?? 6;
-            const decayInterval = this.gameState.survival_decay_current_interval || 6;
             const baseSpeed = 100; // ms
             const currentSpeed = this.gameState.current_speed || baseSpeed;
             const speedMult = baseSpeed / currentSpeed;
-            this.hud.updateSurvivalPressure(decayTimer, decayInterval, speedMult);
+            this.hud.updateSurvivalSpeed(speedMult);
         } else {
             this.hud.hideSurvivalPressure();
         }
