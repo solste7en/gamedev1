@@ -249,7 +249,8 @@ export class Menu {
             item.className = 'room-item';
             
             const gameTypeText = room.game_type === 'snake_classic' ? 'Snake Classic' : 'Snake 3D';
-            const gameModeText = room.game_mode === 'survival' ? 'Survival' : 'High Score';
+            const gameModeText = room.game_mode === 'survival' ? 'Survival' : 
+                                 room.game_mode === 'battle_royale' ? 'Battle Royale' : 'High Score';
             
             item.innerHTML = `
                 <div class="room-info">
@@ -337,7 +338,8 @@ export class Menu {
         const modeNames = {
             'single_player': 'Solo',
             'survival': 'Survival',
-            'high_score': 'High Score'
+            'high_score': 'High Score',
+            'battle_royale': 'Battle Royale'
         };
         return modeNames[mode] || mode || 'Solo';
     }

@@ -32,9 +32,10 @@ export class HUD {
      */
     updateTimer(elapsedTime, timeLimit = null, mode = 'survival') {
         let displayTime;
+        const isTimedMode = (mode === 'high_score' || mode === 'battle_royale') && timeLimit;
         
-        if (mode === 'high_score' && timeLimit) {
-            // Count down for high score mode
+        if (isTimedMode) {
+            // Count down for high score and battle royale modes
             const remaining = Math.max(0, timeLimit - elapsedTime);
             displayTime = remaining;
         } else {
@@ -46,12 +47,15 @@ export class HUD {
         const seconds = Math.floor(displayTime % 60);
         this.timer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         
-        // Warning color when low time in high score mode
-        if (mode === 'high_score' && displayTime < 30) {
+        // Warning color when low time in timed modes
+        if (isTimedMode && displayTime < 30) {
             this.timer.style.color = '#EF4444';
         } else if (mode === 'single_player') {
             // Green tint for single player practice
             this.timer.style.color = '#22C55E';
+        } else if (mode === 'battle_royale') {
+            // Purple tint for battle royale
+            this.timer.style.color = '#A855F7';
         } else {
             this.timer.style.color = '';
         }

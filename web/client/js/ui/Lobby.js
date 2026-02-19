@@ -6,6 +6,19 @@ const AI_ICONS = ['🤖', '🐍', '👾', '🎮', '🦾', '🧠', '👻', '🔥'
 const AI_DIFF_LEVELS = ['amateur', 'semi_pro', 'pro', 'world_class'];
 const AI_DIFF_LABELS = { amateur: 'Amateur', semi_pro: 'Semi-Pro', pro: 'Pro', world_class: 'World-Class' };
 
+// Default bot names — top soccer players post-2000 (shuffled order so bots feel varied)
+const AI_DEFAULT_NAMES = [
+    'Messi', 'Ronaldo', 'Neymar', 'Mbappé', 'Lewandowski',
+    'Modric', 'Salah', 'De Bruyne', 'Benzema', 'Kane',
+    'Suárez', 'Rooney', 'Ribéry', 'Robben', 'Iniesta',
+    'Xavi', 'Ramos', 'Pirlo', 'Buffon', 'Drogba',
+    'Hazard', 'Agüero', 'Özil', 'Müller', 'Haaland',
+    'Vinicius', 'Pedri', 'Bellingham', 'Rodri', 'Kroos',
+    'Firmino', 'Mané', 'Son', 'Griezmann', 'Ibrahimović',
+    'Cavani', 'Falcao', 'Henry', 'Kaka', 'Ronaldinho',
+    'Tevez', 'Thiago', 'Verratti', 'Dybala', 'Lukaku',
+];
+
 export class Lobby {
     constructor(networkManager) {
         this.network = networkManager;
@@ -156,14 +169,13 @@ export class Lobby {
      */
     syncAIConfigs(serverDifficulties = null, serverNames = null) {
         const aiCount = parseInt(this.selectAICount?.value || '0');
-        const defaultIcons = ['🤖', '👾', '🦾', '🧠'];
         
         // Grow or shrink the array
         while (this.aiConfigs.length < aiCount) {
             const i = this.aiConfigs.length;
             this.aiConfigs.push({
-                name: `Bot ${i + 1}`,
-                icon: defaultIcons[i % defaultIcons.length],
+                name: AI_DEFAULT_NAMES[i % AI_DEFAULT_NAMES.length],
+                icon: AI_ICONS[i % AI_ICONS.length],
                 difficulty: (serverDifficulties && serverDifficulties[i]) || 'amateur'
             });
         }
@@ -227,7 +239,7 @@ export class Lobby {
         
         this.playerList.innerHTML = '';
         
-        const colors = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F'];
+        const colors = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F', '#A855F7', '#F97316'];
         
         this.room.players.forEach((player) => {
             const card = document.createElement('div');
@@ -260,7 +272,7 @@ export class Lobby {
             // Ensure config exists
             if (!this.aiConfigs[i]) {
                 this.aiConfigs[i] = {
-                    name: `Bot ${i + 1}`,
+                    name: AI_DEFAULT_NAMES[i % AI_DEFAULT_NAMES.length],
                     icon: AI_ICONS[i % AI_ICONS.length],
                     difficulty: (this.room.ai_difficulties && this.room.ai_difficulties[i]) || 'amateur'
                 };
@@ -363,10 +375,42 @@ export class Lobby {
      * Show/hide time limit based on game mode
      */
     updateTimeLimitVisibility() {
-        // Only show time limit for high_score mode
+        // Show time limit for high_score and battle_royale modes
         if (this.timeLimitRow) {
+            const mode = this.selectGameMode.value;
             this.timeLimitRow.style.display = 
-                this.selectGameMode.value === 'high_score' ? 'flex' : 'none';
+                (mode === 'high_score' || mode === 'battle_royale') ? 'flex' : 'none';
+        }
+        this.updateMapSizeOptions();
+    }
+    
+    /**
+     * Update map size and AI count options based on game mode
+     */
+    updateMapSizeOptions() {
+        if (!this.selectMapSize) return;
+        const mode = this.selectGameMode.value;
+        const isBattleRoyale = mode === 'battle_royale';
+        
+        // Battle Royale: disable small map
+        const smallOption = this.selectMapSize.querySelector('option[value="small"]');
+        if (smallOption) {
+            smallOption.disabled = isBattleRoyale;
+            if (isBattleRoyale && this.selectMapSize.value === 'small') {
+                this.selectMapSize.value = 'large';
+            }
+        }
+        
+        // Battle Royale allows up to 5 AI bots (6 total); other modes capped at 3
+        if (this.selectAICount) {
+            const brOnlyOptions = this.selectAICount.querySelectorAll('.br-only');
+            brOnlyOptions.forEach(opt => {
+                opt.disabled = !isBattleRoyale;
+            });
+            // If mode changed away from BR and a BR-only count is selected, cap at 3
+            if (!isBattleRoyale && parseInt(this.selectAICount.value) > 3) {
+                this.selectAICount.value = '3';
+            }
         }
     }
     

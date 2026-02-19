@@ -204,13 +204,17 @@ class App {
         this.network.on('game_starting', async (data) => {
             await this.startGame();
             
-            // Start the game engine immediately so the map renders during countdown.
-            // Players can see their position and orient themselves before GO!
+            // Apply initial state immediately so map renders before countdown starts
+            if (this.game && data.initial_state) {
+                this.game.updateState(data.initial_state);
+            }
+            
+            // Start the engine so it keeps re-rendering during the countdown
             if (this.game) {
                 this.game.start();
             }
             
-            // Show countdown with sound (map is visible underneath semi-transparent overlay)
+            // Show countdown — fully transparent overlay so map is 100% visible
             this.hud.animateCountdown(
                 () => { this.sound.play('go'); },
                 () => this.sound.play('countdown')

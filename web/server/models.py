@@ -13,7 +13,8 @@ import math
 class GameMode(Enum):
     SURVIVAL = "survival"
     HIGH_SCORE = "high_score"
-    SINGLE_PLAYER = "single_player"  # New single player practice mode
+    SINGLE_PLAYER = "single_player"  # Single player practice mode
+    BATTLE_ROYALE = "battle_royale"  # Shared map, PvP, timed high-score
 
 
 class GameType(Enum):
@@ -95,31 +96,31 @@ AI_DIFFICULTY_SETTINGS = {
     },
     "pro": {
         "name": "Pro",
-        "reaction_time": 50,
-        "food_seeking": 1.0,
+        "reaction_time": 90,
+        "food_seeking": 0.95,
         "deterministic": True,
         "dead_end_check": True,
-        "flood_fill_depth": 40,
-        "dead_end_threshold": 0.35,
-        "randomness": 0,
+        "flood_fill_depth": 28,
+        "dead_end_threshold": 0.28,
+        "randomness": 5,
         "use_pathfinding": True,
-        "pathfinding_depth": 60,
-        "value_power": 1.3,
+        "pathfinding_depth": 42,
+        "value_power": 1.2,
         "combo_aware": True,
         "survival_awareness": True,
     },
     "world_class": {
         "name": "World-Class",
-        "reaction_time": 18,
+        "reaction_time": 45,
         "food_seeking": 1.0,
         "deterministic": True,
         "dead_end_check": True,
-        "flood_fill_depth": 80,
-        "dead_end_threshold": 0.40,
+        "flood_fill_depth": 50,
+        "dead_end_threshold": 0.35,
         "randomness": 0,
         "use_pathfinding": True,
-        "pathfinding_depth": 120,
-        "value_power": 1.5,
+        "pathfinding_depth": 65,
+        "value_power": 1.4,
         "combo_aware": True,
         "survival_awareness": True,
     }
@@ -217,6 +218,8 @@ class Snake:
     combo_timer: float = 0
     # Survival mode: time until next tail segment is lost (counts down each tick)
     decay_timer: float = 6.0
+    # Spawn freeze: snake is visible but invulnerable and cannot move (seconds remaining)
+    spawn_freeze: float = 0.0
     
     def to_dict(self):
         return {
@@ -227,7 +230,8 @@ class Snake:
             "alive": self.alive,
             "score": self.score,
             "combo": self.combo,
-            "decay_timer": self.decay_timer
+            "decay_timer": self.decay_timer,
+            "spawn_freeze": round(self.spawn_freeze, 2)
         }
 
 

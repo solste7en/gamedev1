@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-02-10
+
+### Added
+- **Battle Royale mode**: new PvP game mode with these features:
+  - All players share a single map (only Medium, Large, or Extra Large available)
+  - 3–4 food items spawn simultaneously for competitive feeding
+  - Only killing hits score (no per-hit points like other modes)
+  - Death by wall, barrier, or colliding into another snake's body — the snake being hit survives
+  - Fibonacci respawn delays (same as High Score mode)
+  - Respawn at half length (rounded up, minimum 3)
+  - Timed match with configurable duration (30s, 1min, 2min, 3min)
+  - Highest score at the end wins
+- **Spawn freeze**: 1-second invulnerability period after respawn and at game start (applies to all modes) — snake glows white and cannot move or be hit during this time
+- **Spawn freeze visual**: pulsing white glow effect on snakes during their invulnerability window
+
+### Changed
+- Small map option is disabled (grayed out) in Battle Royale mode
+- Timer displays purple tint for Battle Royale mode
+
+---
+
 ## [0.3.1] - 2026-02-10
 
 ### Added

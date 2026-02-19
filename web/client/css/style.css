@@ -817,10 +817,11 @@ body {
     display: none;
 }
 
-/* Countdown overlay is semi-transparent so players can see their position on the map */
+/* Countdown overlay is fully transparent — map and snake positions are completely visible */
 #countdown-overlay.overlay {
-    background: rgba(10, 15, 30, 0.42);
-    backdrop-filter: blur(2px);
+    background: transparent;
+    backdrop-filter: none;
+    pointer-events: none;
 }
 
 #countdown-number {
@@ -829,9 +830,14 @@ body {
     color: #ffffff;
     animation: pulse 1s ease-in-out infinite;
     text-shadow:
-        0 0 30px rgba(129, 140, 248, 0.9),
-        0 0 60px rgba(79, 70, 229, 0.6),
-        0 4px 8px rgba(0, 0, 0, 0.9);
+        0 0 20px rgba(129, 140, 248, 1),
+        0 0 50px rgba(79, 70, 229, 0.9),
+        0 0 4px #000,
+        2px 2px 0 #000,
+        -2px 2px 0 #000,
+        2px -2px 0 #000,
+        -2px -2px 0 #000,
+        0 0 12px rgba(0, 0, 0, 0.95);
 }
 
 @keyframes pulse {

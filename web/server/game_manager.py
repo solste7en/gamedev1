@@ -19,10 +19,27 @@ from .models import (
 from .room_manager import Room
 
 
-# AI name pool
+# AI name pool — top soccer players from 2000 onward
 AI_NAMES = [
-    "Bot Alpha", "Bot Beta", "Bot Gamma", "Snakebot", 
-    "AI Hunter", "Slither AI", "Bot Omega", "MechSnake"
+    "Messi", "Ronaldo", "Neymar", "Mbappé", "Lewandowski",
+    "Modric", "Salah", "De Bruyne", "Benzema", "Kane",
+    "Suárez", "Rooney", "Ribéry", "Robben", "Iniesta",
+    "Xavi", "Ramos", "Piqué", "Drogba", "Gerrard",
+    "Lampard", "Terry", "Pirlo", "Buffon", "Casillas",
+    "Van Persie", "Sneijder", "Hazard", "Agüero", "Özil",
+    "Müller", "Götze", "Klose", "Zidane", "Ronaldinho",
+    "Nedvěd", "Shevchenko", "Del Piero", "Cannavaro", "Fabio Cannavaro",
+    "Tevez", "Mascherano", "Silva", "Kompany", "Vidic",
+    "Ferdinand", "Carvalho", "Nesta", "Maldini", "Totti",
+    "Haaland", "Vinicius", "Pedri", "Camavinga", "Bellingham",
+    "Rodri", "Kroos", "Firmino", "Mané", "Son",
+    "Lukaku", "Dybala", "Icardi", "Griezmann", "Coutinho",
+    "Thiago", "Rakitić", "Busquets", "Alves", "Lahm",
+    "Matuidi", "Verratti", "Marchisio", "Vidal", "Hulk",
+    "Oscar", "Bernard", "Willian", "Pedro", "Villa",
+    "Torres", "Forlan", "Ibrahimović", "Cavani", "Falcao",
+    "Balotelli", "Tévez", "Trézéguet", "Henry", "Vieira",
+    "Bergkamp", "Cole", "Ashley Cole", "Kaka", "Essien",
 ]
 
 
@@ -69,16 +86,27 @@ class GameManager:
         if total_players <= 1 and self.state.mode == GameMode.SURVIVAL:
             self.state.mode = GameMode.SINGLE_PLAYER
         is_single_player = self.state.mode == GameMode.SINGLE_PLAYER and ai_count == 0
+        is_battle_royale = self.state.mode == GameMode.BATTLE_ROYALE
         
         # Get map size from room settings
         map_size_key = getattr(self.room, 'map_size', 'medium')
+        # Battle Royale: enforce minimum medium map, default to large
+        if is_battle_royale:
+            if map_size_key == 'small':
+                map_size_key = 'large'
         map_config = MAP_SIZES.get(map_size_key, MAP_SIZES['medium'])
         self.state.map_size = map_size_key
         base_width = map_config['width']
         base_height = map_config['height']
         
         # Setup grid based on total player count and map size
-        if is_single_player:
+        if is_battle_royale:
+            # Battle Royale: single shared map for all players
+            self.state.grid_width = base_width
+            self.state.grid_height = base_height
+            self.state.quadrant_width = base_width
+            self.state.quadrant_height = base_height
+        elif is_single_player:
             # Single player with no AI gets the full map size
             self.state.grid_width = base_width
             self.state.grid_height = base_height
@@ -98,7 +126,10 @@ class GameManager:
             self.state.quadrant_height = base_height
         
         # Setup quadrant bounds
-        self._setup_quadrants(total_players if not is_single_player else 1)
+        if is_battle_royale:
+            self._setup_quadrants(1)  # Single shared quadrant
+        else:
+            self._setup_quadrants(total_players if not is_single_player else 1)
         
         # Generate walls for each quadrant based on barrier density
         for quadrant in self.state.quadrant_bounds.keys():
@@ -114,18 +145,21 @@ class GameManager:
             player.state = PlayerState.PLAYING
             self.state.players[player_id] = player
             
-            # For single player with no AI, always use quadrant 0
-            if is_single_player:
+            # Battle Royale / single player: all players in quadrant 0
+            if is_battle_royale or is_single_player:
                 player.quadrant = 0
             
             used_quadrants.add(player.quadrant)
-            self._setup_snake_for_player(player, player_index)
+            self._setup_snake_for_player(player, player_index, is_battle_royale)
             player_index += 1
         
         # Create AI players
         self._next_ai_id = -1  # AI players get negative IDs
         for i in range(ai_count):
-            ai_quadrant = self._get_next_quadrant(used_quadrants, total_players)
+            if is_battle_royale:
+                ai_quadrant = 0  # All AI in quadrant 0 for Battle Royale
+            else:
+                ai_quadrant = self._get_next_quadrant(used_quadrants, total_players)
             used_quadrants.add(ai_quadrant)
             
             # Use per-AI difficulty if available, fallback to 'amateur'
@@ -147,7 +181,7 @@ class GameManager:
             self._next_ai_id -= 1
             
             self.state.players[ai_player.id] = ai_player
-            self._setup_snake_for_player(ai_player, player_index)
+            self._setup_snake_for_player(ai_player, player_index, is_battle_royale)
             player_index += 1
         
         self.state.alive_count = total_players
@@ -157,6 +191,11 @@ class GameManager:
         # Always reset speed to base to prevent carryover across games
         self.state.current_speed = self.state.base_speed
         self.state.elapsed_time = 0
+        
+        # Apply initial spawn freeze to ALL snakes (1 second orientation period)
+        for player in self.state.players.values():
+            if player.snake:
+                player.snake.spawn_freeze = 1.0
         
         # Set mode-specific settings
         if self.state.mode == GameMode.SURVIVAL:
@@ -171,6 +210,14 @@ class GameManager:
             # Set time limit based on room settings
             time_option = TIME_LIMIT_OPTIONS.get(self.room.time_limit, TIME_LIMIT_OPTIONS["1m"])
             self.state.time_limit = time_option["seconds"]
+        elif self.state.mode == GameMode.BATTLE_ROYALE:
+            # Battle Royale: timed high-score mode with shared map
+            time_option = TIME_LIMIT_OPTIONS.get(self.room.time_limit, TIME_LIMIT_OPTIONS["1m"])
+            self.state.time_limit = time_option["seconds"]
+            # Spawn extra food (3-4 items)
+            extra_food = random.randint(1, 2)  # Already spawned 2, add 1-2 more
+            for _ in range(extra_food):
+                self._spawn_food(0)
         elif self.state.mode == GameMode.SINGLE_PLAYER:
             # Single player has no time limit, just practice
             self.state.time_limit = 0  # No limit
@@ -182,11 +229,18 @@ class GameManager:
                 return q
         return 0
     
-    def _setup_snake_for_player(self, player: Player, player_index: int):
+    def _setup_snake_for_player(self, player: Player, player_index: int, is_battle_royale: bool = False):
         """Setup snake for a player in their quadrant"""
         # Create snake in player's quadrant with safe spawn position
         wall_positions = self._get_wall_positions(player.quadrant)
-        start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
+        
+        # For Battle Royale, we need to avoid other snakes too
+        if is_battle_royale:
+            start_x, start_y, direction = self._find_safe_spawn_battle_royale(
+                player.quadrant, wall_positions, player.id
+            )
+        else:
+            start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
         
         # Get direction vector for body placement (body is behind head)
         dir_vectors = {
@@ -491,7 +545,74 @@ class GameManager:
         
         # Fallback to center facing right (shouldn't happen with reasonable maps)
         return (center_x, center_y, Direction.RIGHT)
+
+    def _find_safe_spawn_battle_royale(self, quadrant: int, wall_positions: Set[Tuple[int, int]],
+                                        exclude_player_id: int) -> Tuple[int, int, Direction]:
+        """Find a safe spawn in Battle Royale mode, avoiding walls AND other snakes."""
+        bounds = self.state.quadrant_bounds.get(quadrant)
+        if not bounds:
+            return (0, 0, Direction.RIGHT)
         
+        # Build set of all snake body positions (excluding the player being spawned)
+        snake_positions = set()
+        for p in self.state.players.values():
+            if p.id != exclude_player_id and p.snake and p.snake.body:
+                for pos in p.snake.body:
+                    snake_positions.add((pos.x, pos.y))
+        
+        blocked = wall_positions | snake_positions
+        
+        direction_vectors = {
+            Direction.RIGHT: (1, 0),
+            Direction.LEFT: (-1, 0),
+            Direction.UP: (0, -1),
+            Direction.DOWN: (0, 1)
+        }
+        
+        # Try random positions across the map to spread players out
+        width = bounds.x_max - bounds.x_min
+        height = bounds.y_max - bounds.y_min
+        attempts = 0
+        max_attempts = 200
+        
+        while attempts < max_attempts:
+            attempts += 1
+            test_x = random.randint(bounds.x_min + 4, bounds.x_max - 5)
+            test_y = random.randint(bounds.y_min + 4, bounds.y_max - 5)
+            
+            # Try each direction from this position
+            for direction, (vx, vy) in direction_vectors.items():
+                # Check if snake body positions would be clear
+                body_clear = True
+                for j in range(3):
+                    body_x = test_x - vx * j
+                    body_y = test_y - vy * j
+                    if (body_x, body_y) in blocked:
+                        body_clear = False
+                        break
+                
+                if not body_clear:
+                    continue
+                
+                # Check 3 spaces ahead of head are clear
+                ahead_clear = True
+                for i in range(1, 4):
+                    ahead_x = test_x + vx * i
+                    ahead_y = test_y + vy * i
+                    if (ahead_x, ahead_y) in blocked:
+                        ahead_clear = False
+                        break
+                    if not (bounds.x_min <= ahead_x < bounds.x_max and
+                            bounds.y_min <= ahead_y < bounds.y_max):
+                        ahead_clear = False
+                        break
+                
+                if ahead_clear:
+                    return (test_x, test_y, direction)
+        
+        # Fallback to regular spawn if we couldn't find a clear spot
+        return self._find_safe_spawn(quadrant, wall_positions)
+
     def _setup_quadrants(self, num_players: int):
         """Setup quadrant bounds based on player count"""
         w = self.state.quadrant_width
@@ -619,6 +740,11 @@ class GameManager:
         
         self.state.elapsed_time += dt
         
+        # Tick down spawn_freeze timers on all snakes
+        for player in self.state.players.values():
+            if player.snake and player.snake.spawn_freeze > 0:
+                player.snake.spawn_freeze = max(0.0, player.snake.spawn_freeze - dt)
+        
         # Tick down hit-recovery windows on all food (non-consecutive hit enforcement)
         for quadrant_foods in self.state.foods.values():
             for food in quadrant_foods:
@@ -630,19 +756,26 @@ class GameManager:
             self._update_survival(dt)
         elif self.state.mode == GameMode.HIGH_SCORE:
             self._update_high_score(dt)
+        elif self.state.mode == GameMode.BATTLE_ROYALE:
+            self._update_battle_royale(dt)
         elif self.state.mode == GameMode.SINGLE_PLAYER:
             self._update_single_player(dt)
         
-        # Update AI players
+        # Update AI players (skip if in spawn freeze)
         current_time = time.time()
         for player in self.state.players.values():
             if player.is_ai and player.snake and player.snake.alive:
-                self._update_ai_snake(player, current_time)
+                if player.snake.spawn_freeze <= 0:
+                    self._update_ai_snake(player, current_time)
         
-        # Move snakes
+        # Move snakes (skip if in spawn freeze)
         for player in self.state.players.values():
-            if player.snake and player.snake.alive:
+            if player.snake and player.snake.alive and player.snake.spawn_freeze <= 0:
                 self._move_snake(player)
+        
+        # Battle Royale: check snake-to-snake collisions after all moves
+        if self.state.mode == GameMode.BATTLE_ROYALE:
+            self._check_snake_collisions()
         
         # Check win conditions
         self._check_win_conditions()
@@ -731,6 +864,60 @@ class GameManager:
         if self.state.elapsed_time >= self.state.time_limit:
             self._end_game_high_score()
     
+    def _update_battle_royale(self, dt: float):
+        """Update Battle Royale mode: shared map, timed, combo scoring."""
+        # Speed increase (same as high score)
+        intervals_passed = int(self.state.elapsed_time / self.state.speed_increase_interval)
+        expected_speed = self.state.base_speed * (self.state.speed_increase_factor ** intervals_passed)
+        if self.state.current_speed > expected_speed:
+            self.state.current_speed = max(50, expected_speed)
+        
+        # Update combo timers
+        for player in self.state.players.values():
+            if player.snake and player.snake.alive:
+                if player.snake.combo_timer > 0:
+                    player.snake.combo_timer -= dt
+                    if player.snake.combo_timer <= 0:
+                        player.snake.combo = 0
+        
+        # Check time limit
+        if self.state.elapsed_time >= self.state.time_limit:
+            self._end_game_high_score()  # Same end logic as high score mode
+    
+    def _check_snake_collisions(self):
+        """Check for snake-to-snake collisions in Battle Royale mode.
+        If snake A's head collides with snake B's body, snake A dies.
+        Snake B survives and continues.
+        """
+        deaths = []
+        for player in self.state.players.values():
+            if not player.snake or not player.snake.alive:
+                continue
+            if player.snake.spawn_freeze > 0:
+                continue  # Invulnerable during spawn freeze
+            
+            head = player.snake.body[0]
+            
+            # Check collision with other snakes' bodies
+            for other in self.state.players.values():
+                if other.id == player.id:
+                    continue
+                if not other.snake or not other.snake.alive:
+                    continue
+                
+                # Check if our head hit their body (excluding their head for head-on collisions)
+                for body_pos in other.snake.body[1:]:
+                    if head.x == body_pos.x and head.y == body_pos.y:
+                        deaths.append(player)
+                        break
+                else:
+                    continue
+                break
+        
+        # Apply deaths
+        for player in deaths:
+            self._kill_snake(player)
+
     def _shrink_arena(self):
         """Shrink all quadrant boundaries"""
         for q, bounds in self.state.quadrant_bounds.items():
@@ -805,20 +992,26 @@ class GameManager:
             hit = any(new_head.x == fp.x and new_head.y == fp.y for fp in food_positions)
             
             if hit:
-                # Score per hit = base_value_per_hit × barrier_multiplier (× combo if last hit)
-                base_pts_per_hit = food.value // food.max_health
-                
                 food.health -= 1
                 
                 if food.health <= 0:
-                    # Final hit — food is consumed; award remaining points + combo bonus
-                    score = int(base_pts_per_hit * barrier_config["multiplier"])
-                    
-                    # Combo bonus applies on the kill hit only
-                    if self.state.mode in [GameMode.HIGH_SCORE, GameMode.SINGLE_PLAYER, GameMode.SURVIVAL]:
+                    # Final hit — food is consumed
+                    if self.state.mode == GameMode.BATTLE_ROYALE:
+                        # Battle Royale: only the killing hit scores (full value + combo)
+                        score = int(food.value * barrier_config["multiplier"])
                         snake.combo += 1
                         snake.combo_timer = 2.0
-                        score = int(score * (1 + snake.combo * 0.1))  # 10% per combo streak
+                        score = int(score * (1 + snake.combo * 0.1))
+                    else:
+                        # Other modes: per-hit scoring
+                        base_pts_per_hit = food.value // food.max_health
+                        score = int(base_pts_per_hit * barrier_config["multiplier"])
+                        
+                        # Combo bonus applies on the kill hit
+                        if self.state.mode in [GameMode.HIGH_SCORE, GameMode.SINGLE_PLAYER, GameMode.SURVIVAL]:
+                            snake.combo += 1
+                            snake.combo_timer = 2.0
+                            score = int(score * (1 + snake.combo * 0.1))
                     
                     # Survival mode: eating resets the decay timer
                     if self.state.mode == GameMode.SURVIVAL:
@@ -832,17 +1025,19 @@ class GameManager:
                         if snake.score > self.state.single_player_high_score:
                             self.state.single_player_high_score = snake.score
                 else:
-                    # Partial hit — award per-hit score immediately, start recovery window
-                    score = int(base_pts_per_hit * barrier_config["multiplier"])
-                    snake.score += score
+                    # Partial hit — only award score in non-Battle Royale modes
+                    if self.state.mode != GameMode.BATTLE_ROYALE:
+                        base_pts_per_hit = food.value // food.max_health
+                        score = int(base_pts_per_hit * barrier_config["multiplier"])
+                        snake.score += score
+                        
+                        if self.state.mode == GameMode.SINGLE_PLAYER:
+                            if snake.score > self.state.single_player_high_score:
+                                self.state.single_player_high_score = snake.score
                     
                     # Begin recovery: snake must leave and re-approach for next hit
                     recovery_duration = FOOD_HIT_RECOVERY.get(food.category, 0.0)
                     food.hit_recovery = recovery_duration
-                    
-                    if self.state.mode == GameMode.SINGLE_PLAYER:
-                        if snake.score > self.state.single_player_high_score:
-                            self.state.single_player_high_score = snake.score
                 
                 ate_food = True
                 break
@@ -869,8 +1064,8 @@ class GameManager:
         player.death_time = time.time()
         player.death_count += 1
         
-        # Progressive respawn penalty in high score mode (fibonacci sequence)
-        if self.state.mode == GameMode.HIGH_SCORE:
+        # Progressive respawn penalty in high score and battle royale modes (fibonacci)
+        if self.state.mode in [GameMode.HIGH_SCORE, GameMode.BATTLE_ROYALE]:
             player.respawn_delay = self._get_respawn_delay(player.death_count)
         
         self.state.alive_count -= 1
@@ -880,14 +1075,20 @@ class GameManager:
             player.rank = self.state.alive_count + 1
     
     def _respawn_snake(self, player: Player):
-        """Respawn a snake (for high score mode)"""
+        """Respawn a snake (for high score / battle royale modes)"""
         bounds = self.state.quadrant_bounds.get(player.quadrant)
         if not bounds:
             return
         
-        # Find safe spawn position with no walls in front
         wall_positions = self._get_wall_positions(player.quadrant)
-        start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
+        
+        # Battle Royale: use spawn that avoids other snakes
+        if self.state.mode == GameMode.BATTLE_ROYALE:
+            start_x, start_y, direction = self._find_safe_spawn_battle_royale(
+                player.quadrant, wall_positions, player.id
+            )
+        else:
+            start_x, start_y, direction = self._find_safe_spawn(player.quadrant, wall_positions)
         
         # Get direction vector for body placement
         dir_vectors = {
@@ -898,11 +1099,20 @@ class GameManager:
         }
         vx, vy = dir_vectors[direction]
         
-        player.snake.body = [Position(start_x - vx * j, start_y - vy * j) for j in range(3)]
+        # Determine respawn length
+        if self.state.mode == GameMode.BATTLE_ROYALE:
+            # Battle Royale: halve length (round up), minimum 3
+            old_length = len(player.snake.body) if player.snake.body else 3
+            new_length = max(3, -(-old_length // 2))  # Ceiling division
+        else:
+            new_length = 3
+        
+        player.snake.body = [Position(start_x - vx * j, start_y - vy * j) for j in range(new_length)]
         player.snake.direction = direction
         player.snake.next_direction = direction
         player.snake.alive = True
         player.snake.combo = 0
+        player.snake.spawn_freeze = 1.0  # 1 second invulnerability after respawn
         player.state = PlayerState.PLAYING
         self.state.alive_count += 1
     
@@ -1222,10 +1432,8 @@ class GameManager:
         return max(safe_dirs, key=lambda d: scores[d])
     
     async def run_game_loop(self):
-        """Main game loop"""
-        self.setup_game()
-        
-        # Send initial state
+        """Main game loop — setup_game() must be called before this."""
+        # Send initial state to all clients
         await self.broadcast({
             "type": "game_start",
             "state": self.state.to_dict()
@@ -1251,8 +1459,8 @@ class GameManager:
                 "state": self.state.to_dict()
             })
             
-            # Handle respawns in high score mode (fibonacci-increasing delay per death)
-            if self.state.mode == GameMode.HIGH_SCORE:
+            # Handle respawns in high score and battle royale modes
+            if self.state.mode in [GameMode.HIGH_SCORE, GameMode.BATTLE_ROYALE]:
                 for player in self.state.players.values():
                     if player.state == PlayerState.DEAD and player.death_time:
                         if time.time() - player.death_time >= player.respawn_delay:

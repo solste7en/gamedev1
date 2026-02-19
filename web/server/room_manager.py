@@ -162,12 +162,14 @@ class RoomManager:
             )
             self._next_player_id += 1
             
-            # Create room
+            # Create room (Battle Royale allows 6 total slots)
+            max_players = 6 if game_mode == GameMode.BATTLE_ROYALE else 4
             room = Room(
                 code=code,
                 host_id=player.id,
                 game_type=game_type,
-                game_mode=game_mode
+                game_mode=game_mode,
+                max_players=max_players
             )
             room.add_player(player)
             
@@ -266,13 +268,20 @@ class RoomManager:
                 room.game_type = game_type
             if game_mode:
                 room.game_mode = game_mode
+                # Adjust room capacity when mode changes
+                if game_mode == GameMode.BATTLE_ROYALE:
+                    room.max_players = 6
+                else:
+                    room.max_players = 4
             if barrier_density and barrier_density in ["none", "sparse", "moderate", "dense"]:
                 room.barrier_density = barrier_density
             if map_size and map_size in ["small", "medium", "large", "extra_large"]:
                 room.map_size = map_size
             if time_limit and time_limit in ["30s", "1m", "2m", "3m"]:
                 room.time_limit = time_limit
-            if ai_count is not None and 0 <= ai_count <= 3:
+            is_battle_royale = room.game_mode == GameMode.BATTLE_ROYALE
+            max_ai = 5 if is_battle_royale else 3
+            if ai_count is not None and 0 <= ai_count <= max_ai:
                 room.ai_count = ai_count
             if ai_difficulties is not None and isinstance(ai_difficulties, list):
                 valid = ["amateur", "semi_pro", "pro", "world_class"]

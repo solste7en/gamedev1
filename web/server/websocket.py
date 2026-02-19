@@ -311,16 +311,20 @@ class ConnectionManager:
             game_manager = GameManager(room, broadcast_callback)
             self.game_managers[room.code] = game_manager
             
-            # Notify players game is starting
+            # Setup the game state BEFORE countdown so clients can render the map
+            game_manager.setup_game()
+            
+            # Notify players game is starting — include initial state so map renders immediately
             await self.broadcast_to_room(room.code, {
                 "type": "game_starting",
-                "countdown": 3
+                "countdown": 3,
+                "initial_state": game_manager.state.to_dict()
             })
             
-            # Countdown
+            # Countdown (map is rendering on clients during this time)
             await asyncio.sleep(3)
             
-            # Start game
+            # Start game loop (setup_game already called above)
             game_manager.start()
     
     async def _handle_input(self, player_id: int, data: dict):

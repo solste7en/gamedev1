@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snake Multiplayer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐍</text></svg>">
     <link rel="stylesheet" href="static/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
@@ -128,6 +129,7 @@
                         <select id="select-game-mode">
                             <option value="survival" selected>Survival</option>
                             <option value="high_score">High Score</option>
+                            <option value="battle_royale">Battle Royale</option>
                         </select>
                     </div>
                     <div class="setting-row">
@@ -164,6 +166,8 @@
                             <option value="1">1 Bot</option>
                             <option value="2">2 Bots</option>
                             <option value="3">3 Bots</option>
+                            <option value="4" class="br-only">4 Bots</option>
+                            <option value="5" class="br-only">5 Bots</option>
                         </select>
                     </div>
                 </div>

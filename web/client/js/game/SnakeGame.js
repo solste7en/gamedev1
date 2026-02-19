@@ -122,23 +122,12 @@ export class SnakeGame {
             ? (this.gameState.quadrant_bounds[0].y_max - this.gameState.quadrant_bounds[0].y_min)
             : 20;
 
-        // For large/extra_large maps with multiple players, use a player-focused viewport:
-        // the current player's quadrant fills the canvas; adjacent quadrants peek in from the edges.
-        const FOCUSED_SIZES = ['large', 'extra_large'];
-        this.focusedLayout = FOCUSED_SIZES.includes(this.gameState.map_size) && numQuadrants > 1;
+        this.focusedLayout = false;
+        this.focusPeek = 0;
 
-        let width, height;
-        if (this.focusedLayout) {
-            // Show a fixed 64px peek strip of neighbouring quadrants on each axis
-            this.focusPeek = 64;
-            width  = quadrantWidth  * this.cellSize + this.focusPeek * 2 + this.padding * 2;
-            height = quadrantHeight * this.cellSize + this.focusPeek * 2 + this.padding * 2 + 30;
-        } else {
-            this.focusPeek = 0;
-            // Labels render inside each quadrant's top area; 30px top offset + bottom padding
-            width  = cols * quadrantWidth  * this.cellSize + this.padding * 2;
-            height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
-        }
+        // Always show all quadrants — labels render inside each quadrant's top area
+        const width  = cols * quadrantWidth  * this.cellSize + this.padding * 2;
+        const height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
         
         this.renderer.resize(width, height);
         this.renderer.setGrid(quadrantWidth * cols, quadrantHeight * rows, this.cellSize);
@@ -279,21 +268,8 @@ export class SnakeGame {
         
         this.frameCount++;
 
-        let contentOffsetX = this.padding;
-        let contentOffsetY = this.padding + 30;
-
-        // In focused layout (large / extra_large multiplayer), shift the world so that
-        // the current player's quadrant is centered in the canvas with a peek strip around it.
-        if (this.focusedLayout) {
-            const myPlayer = this.gameState.players[this.playerId];
-            const myQuadrantIdx = myPlayer ? myPlayer.quadrant : 0;
-            const myBounds = this.gameState.quadrant_bounds[myQuadrantIdx];
-            if (myBounds) {
-                const peek = this.focusPeek || 0;
-                contentOffsetX = this.padding + peek - myBounds.x_min * this.cellSize;
-                contentOffsetY = this.padding + 30 + peek - myBounds.y_min * this.cellSize;
-            }
-        }
+        const contentOffsetX = this.padding;
+        const contentOffsetY = this.padding + 30;
         
         // Step 1: Render static layer (backgrounds, grid, walls) - only once
         if (!this.graphicsCache.staticRendered) {
@@ -999,9 +975,12 @@ export class SnakeGame {
         const baseColor = this.parseColor(snake.color);
         const baseAlpha = snake.alive ? 1 : 0.3;
         
+        // Spawn freeze: snake is invulnerable and glowing
+        const isSpawnFrozen = snake.spawn_freeze > 0;
+        
         // Survival decay warning: compute how urgent the decay is (0 = safe, 1 = critical)
         let decayUrgency = 0;
-        if (this.gameState?.mode === 'survival' && snake.alive) {
+        if (this.gameState?.mode === 'survival' && snake.alive && !isSpawnFrozen) {
             const interval = this.gameState.survival_decay_current_interval || 6;
             const timer = snake.decay_timer ?? interval;
             decayUrgency = 1 - Math.max(0, Math.min(1, timer / interval));
@@ -1018,7 +997,13 @@ export class SnakeGame {
             
             // Calculate color gradient (brighter at head)
             const brightness = 0.6 + (1 - i / snake.body.length) * 0.4;
-            const segColor = this.adjustBrightness(baseColor, brightness);
+            let segColor = this.adjustBrightness(baseColor, brightness);
+            
+            // Spawn freeze effect: pulsing white tint
+            if (isSpawnFrozen) {
+                const pulse = 0.5 + 0.5 * Math.sin(this.frameCount * 0.2);
+                segColor = this.blendColors(segColor, 0xFFFFFF, 0.3 + pulse * 0.3);
+            }
             
             // Decay warning: fade last few tail segments when timer is low.
             // The more urgent, the more segments are affected and the more they pulse.
@@ -1192,6 +1177,22 @@ export class SnakeGame {
         const r = Math.min(255, Math.floor(((color >> 16) & 0xFF) * factor));
         const g = Math.min(255, Math.floor(((color >> 8) & 0xFF) * factor));
         const b = Math.min(255, Math.floor((color & 0xFF) * factor));
+        return (r << 16) | (g << 8) | b;
+    }
+    
+    /**
+     * Blend two colors together
+     */
+    blendColors(color1, color2, amount) {
+        const r1 = (color1 >> 16) & 0xFF;
+        const g1 = (color1 >> 8) & 0xFF;
+        const b1 = color1 & 0xFF;
+        const r2 = (color2 >> 16) & 0xFF;
+        const g2 = (color2 >> 8) & 0xFF;
+        const b2 = color2 & 0xFF;
+        const r = Math.round(r1 + (r2 - r1) * amount);
+        const g = Math.round(g1 + (g2 - g1) * amount);
+        const b = Math.round(b1 + (b2 - b1) * amount);
         return (r << 16) | (g << 8) | b;
     }
     
