@@ -35,6 +35,10 @@ export class BrawlerGame {
         this.offsetX = 0;
         this.offsetY = 0;
         
+        // Logical canvas dimensions (CSS size, not back buffer)
+        this.logicalWidth = 900;
+        this.logicalHeight = 650;
+        
         // Particle system
         this.particles = null;
         
@@ -200,17 +204,18 @@ export class BrawlerGame {
      * Calculate and set renderer size
      */
     async calculateSize() {
-        const width = 900;
-        const height = 650;
+        // Store logical dimensions for scale calculations
+        this.logicalWidth = 900;
+        this.logicalHeight = 650;
         
         const canvas = document.getElementById('game-canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = this.logicalWidth;
+        canvas.height = this.logicalHeight;
         
         if (!this.renderer.app) {
-            await this.renderer.init(width, height);
+            await this.renderer.init(this.logicalWidth, this.logicalHeight);
         } else {
-            this.renderer.resize(width, height);
+            this.renderer.resize(this.logicalWidth, this.logicalHeight);
         }
         
         // Initialize particle system
@@ -224,16 +229,17 @@ export class BrawlerGame {
      * Update scale based on arena size
      */
     updateScale(arenaWidth, arenaHeight) {
-        const canvas = document.getElementById('game-canvas');
         const padding = 50;
         
-        const scaleX = (canvas.width - padding * 2) / arenaWidth;
-        const scaleY = (canvas.height - padding * 2) / arenaHeight;
+        // Use logical dimensions instead of canvas.width/height
+        // (canvas.width/height returns back buffer size which is larger on Retina displays)
+        const scaleX = (this.logicalWidth - padding * 2) / arenaWidth;
+        const scaleY = (this.logicalHeight - padding * 2) / arenaHeight;
         this.scale = Math.min(scaleX, scaleY);
         
         // Center the arena
-        this.offsetX = (canvas.width - arenaWidth * this.scale) / 2;
-        this.offsetY = (canvas.height - arenaHeight * this.scale) / 2;
+        this.offsetX = (this.logicalWidth - arenaWidth * this.scale) / 2;
+        this.offsetY = (this.logicalHeight - arenaHeight * this.scale) / 2;
     }
     
     /**
@@ -570,9 +576,9 @@ export class BrawlerGame {
      */
     drawPhaseOverlay() {
         const state = this.gameState;
-        const canvas = document.getElementById('game-canvas');
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
+        // Use logical dimensions for consistent positioning
+        const centerX = this.logicalWidth / 2;
+        const centerY = this.logicalHeight / 2;
         
         if (state.phase === 'countdown') {
             const count = Math.ceil(state.countdown_timer);

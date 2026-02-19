@@ -70,16 +70,12 @@ class App {
     setupGameSelection() {
         const snakeBtn = document.getElementById('btn-snake-game');
         const brawlerBtn = document.getElementById('btn-brawler-game');
-        const snakeMenu = document.getElementById('snake-menu-buttons');
-        const brawlerMenu = document.getElementById('brawler-menu-buttons');
         
         if (snakeBtn) {
             snakeBtn.addEventListener('click', () => {
                 this.selectedGame = 'snake';
                 snakeBtn.classList.add('selected');
                 brawlerBtn?.classList.remove('selected');
-                snakeMenu?.classList.remove('hidden');
-                brawlerMenu?.classList.add('hidden');
             });
         }
         
@@ -88,42 +84,8 @@ class App {
                 this.selectedGame = 'brawler';
                 brawlerBtn.classList.add('selected');
                 snakeBtn?.classList.remove('selected');
-                brawlerMenu?.classList.remove('hidden');
-                snakeMenu?.classList.add('hidden');
             });
         }
-        
-        // Brawler menu buttons
-        const brawlerCreateBtn = document.getElementById('btn-brawler-create');
-        const brawlerJoinBtn = document.getElementById('btn-brawler-join');
-        const brawlerBrowseBtn = document.getElementById('btn-brawler-browse');
-        
-        if (brawlerCreateBtn) {
-            brawlerCreateBtn.addEventListener('click', () => {
-                this.createBrawlerRoom();
-            });
-        }
-        
-        if (brawlerJoinBtn) {
-            brawlerJoinBtn.addEventListener('click', () => {
-                this.menu.showJoinModal();
-            });
-        }
-        
-        if (brawlerBrowseBtn) {
-            brawlerBrowseBtn.addEventListener('click', () => {
-                this.network.listRooms();
-                this.menu.showBrowseModal();
-            });
-        }
-    }
-    
-    /**
-     * Create a brawler room
-     */
-    createBrawlerRoom() {
-        const playerName = this.menu.getPlayerName();
-        this.network.createRoom(playerName, 'brawler', 'survival');
     }
     
     /**
@@ -205,6 +167,12 @@ class App {
             this.menu.updateRoomList(data.rooms);
         });
         
+        // Player left their own room → navigate back to home
+        this.network.on('room_left', () => {
+            this.currentRoom = null;
+            this.showMenu();
+        });
+        
         this.network.on('chat', (data) => {
             this.lobby.addChatMessage(data.player_name, data.message);
         });
@@ -276,13 +244,14 @@ class App {
                 this.sound.play('win');
             }
             
-            // Submit score to leaderboard for single player mode
-            if (this.currentRoom && this.currentRoom.game_mode === 'single_player') {
+            // Submit score to leaderboard for all Snake game modes
+            if (this.currentRoom && this.currentRoom.game_type !== 'brawler') {
                 const playerState = data.final_state?.players?.[this.playerId];
                 if (playerState && playerState.snake && playerState.snake.score > 0) {
                     const playerName = this.menu.getPlayerName();
                     const gameType = this.currentRoom.game_type || 'snake_classic';
-                    this.network.submitScore(playerName, playerState.snake.score, gameType);
+                    const gameMode = this.currentRoom.game_mode || 'single_player';
+                    this.network.submitScore(playerName, playerState.snake.score, gameType, gameMode);
                 }
             }
         });
@@ -358,6 +327,12 @@ class App {
         gameScreen.classList.remove('hidden');
         gameScreen.classList.add('active');
         
+        // Show animal legend for snake games
+        const animalLegend = document.getElementById('animal-legend');
+        if (animalLegend) {
+            animalLegend.classList.remove('hidden');
+        }
+        
         // Get or recreate canvas to ensure clean WebGL context
         let canvas = document.getElementById('game-canvas');
         
@@ -396,6 +371,12 @@ class App {
         gameScreen.classList.remove('hidden');
         gameScreen.classList.add('active');
         
+        // Hide animal legend for brawler games
+        const animalLegend = document.getElementById('animal-legend');
+        if (animalLegend) {
+            animalLegend.classList.add('hidden');
+        }
+        
         // Get or recreate canvas to ensure clean WebGL context
         let canvas = document.getElementById('game-canvas');
         
@@ -425,6 +406,12 @@ class App {
         const gameScreen = document.getElementById('game-screen');
         gameScreen.classList.remove('active');
         gameScreen.classList.add('hidden');
+        
+        // Hide animal legend
+        const animalLegend = document.getElementById('animal-legend');
+        if (animalLegend) {
+            animalLegend.classList.add('hidden');
+        }
         
         if (this.game) {
             if (this.game.stop) {

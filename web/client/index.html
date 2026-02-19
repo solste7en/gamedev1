@@ -35,17 +35,13 @@
                     </div>
                 </div>
                 
-                <div class="menu-buttons" id="snake-menu-buttons">
+                <div class="menu-buttons" id="menu-buttons">
                     <button id="btn-single-player" class="btn btn-success">
                         <span class="btn-icon">🎮</span>
-                        Single Player
-                    </button>
-                    <button id="btn-create-room" class="btn btn-primary">
-                        <span class="btn-icon">+</span>
-                        Create Multiplayer
+                        Start Game
                     </button>
                     <button id="btn-join-room" class="btn btn-secondary">
-                        <span class="btn-icon">→</span>
+                        <span class="btn-icon">🚪</span>
                         Join Room
                     </button>
                     <button id="btn-browse-rooms" class="btn btn-tertiary">
@@ -54,22 +50,7 @@
                     </button>
                     <button id="btn-leaderboard" class="btn btn-tertiary">
                         <span class="btn-icon">🏆</span>
-                        Snake Leaderboard
-                    </button>
-                </div>
-                
-                <div class="menu-buttons hidden" id="brawler-menu-buttons">
-                    <button id="btn-brawler-create" class="btn btn-primary">
-                        <span class="btn-icon">+</span>
-                        Create Brawler Room
-                    </button>
-                    <button id="btn-brawler-join" class="btn btn-secondary">
-                        <span class="btn-icon">→</span>
-                        Join Room
-                    </button>
-                    <button id="btn-brawler-browse" class="btn btn-tertiary">
-                        <span class="btn-icon">🔍</span>
-                        Browse Rooms
+                        Leaderboard
                     </button>
                 </div>
                 
@@ -130,18 +111,11 @@
                 
                 <div class="lobby-settings" id="lobby-settings">
                     <h3>Game Settings</h3>
-                    <div class="setting-row" id="snake-game-type-row">
-                        <label>Game Type</label>
-                        <select id="select-game-type">
-                            <option value="snake_classic">Snake Classic</option>
-                        </select>
-                    </div>
                     <div class="setting-row">
                         <label>Game Mode</label>
                         <select id="select-game-mode">
-                            <option value="single_player">Single Player</option>
-                            <option value="survival">Survival (Multiplayer)</option>
-                            <option value="high_score">High Score (Multiplayer)</option>
+                            <option value="survival" selected>Survival</option>
+                            <option value="high_score">High Score</option>
                         </select>
                     </div>
                     <div class="setting-row">
@@ -169,6 +143,15 @@
                             <option value="1m" selected>1 Minute</option>
                             <option value="2m">2 Minutes</option>
                             <option value="3m">3 Minutes</option>
+                        </select>
+                    </div>
+                    <div class="setting-row ai-settings">
+                        <label>AI Bots</label>
+                        <select id="select-ai-count">
+                            <option value="0" selected>None</option>
+                            <option value="1">1 Bot</option>
+                            <option value="2">2 Bots</option>
+                            <option value="3">3 Bots</option>
                         </select>
                     </div>
                 </div>
@@ -245,8 +228,62 @@
         
         <!-- Game Screen -->
         <div id="game-screen" class="screen hidden">
-            <div id="game-container">
-                <canvas id="game-canvas"></canvas>
+            <div id="game-wrapper">
+                <div id="game-container">
+                    <canvas id="game-canvas"></canvas>
+                </div>
+                <div id="animal-legend" class="legend-panel hidden">
+                    <div class="legend-title">Animal Guide</div>
+
+                    <div class="legend-category">
+                        <div class="legend-cat-label">Small <span class="legend-pts">5–25 pts</span></div>
+                        <div class="legend-grid">
+                            <div class="legend-item"><span class="legend-dot" style="background:#32CD32;"></span>Frog</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#FFC832;"></span>Bee</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#FF69B4;"></span>Butterfly</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#A9A9A9;"></span>Mouse</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#383838; border:1px solid #666;"></span>Spider</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#8B4513;"></span>Bug</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#553723;"></span>Cricket</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#FF9696;"></span>Worm</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#DC2828;"></span>Ladybug</div>
+                        </div>
+                    </div>
+
+                    <div class="legend-category">
+                        <div class="legend-cat-label">Medium <span class="legend-pts">35–60 pts · 2-3 hits</span></div>
+                        <div class="legend-grid">
+                            <div class="legend-item"><span class="legend-dot" style="background:#DCC8B4;"></span>Rabbit</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#64B4DC;"></span>Fish</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#3C783C;"></span>Lizard</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#50783C;"></span>Turtle</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#B48C50;"></span>Duck</div>
+                        </div>
+                    </div>
+
+                    <div class="legend-category">
+                        <div class="legend-cat-label">Large <span class="legend-pts">90–150 pts · 4-5 hits</span></div>
+                        <div class="legend-grid">
+                            <div class="legend-item"><span class="legend-dot" style="background:#D2691E;"></span>Fox</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#787882;"></span>Wolf</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#6495ED;"></span>Bird</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#B48C64;"></span>Deer</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#FFB4B4;"></span>Pig</div>
+                        </div>
+                    </div>
+
+                    <div class="legend-category">
+                        <div class="legend-cat-label">Huge <span class="legend-pts">200–400 pts · 6-8 hits</span></div>
+                        <div class="legend-grid">
+                            <div class="legend-item"><span class="legend-dot" style="background:#FFA532;"></span>Tiger</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#DCB464;"></span>Lion</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#644632;"></span>Bear</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#46643C;"></span>Croc</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#826E78;"></span>Hippo</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#8C8C96;"></span>Elephant</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="game-hud">
                 <div id="timer" class="hud-element">0:00</div>

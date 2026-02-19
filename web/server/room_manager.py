@@ -8,7 +8,6 @@ from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 import asyncio
 from datetime import datetime
-
 from .models import Player, PlayerState, GameType, GameMode
 
 
@@ -33,6 +32,11 @@ class Room:
     min_players: int = 1  # Changed to 1 to support single player
     created_at: datetime = field(default_factory=datetime.now)
     game_started: bool = False
+    
+    # AI settings for Snake games
+    ai_count: int = 0  # Number of AI players to add
+    ai_difficulties: List[str] = field(default_factory=list)  # Per-AI difficulty levels
+    ai_names: List[str] = field(default_factory=list)  # Custom names for AI bots
     
     # Brawler-specific fields
     team_assignments: Dict[int, int] = field(default_factory=dict)  # player_id -> team (0=blue, 1=red)
@@ -70,16 +74,26 @@ class Room:
         return sum(1 for p in self.players.values() if p.state == PlayerState.READY)
     
     def can_start(self) -> bool:
-        """Check if game can start"""
-        # Single player can start immediately when ready
-        if self.game_mode == GameMode.SINGLE_PLAYER:
-            return (len(self.players) >= 1 and 
-                    self.get_ready_count() == len(self.players) and
-                    not self.game_started)
+        """Check if game can start.
+        AI bots are always considered ready; only human players must explicitly ready up.
+        """
+        human_count = len(self.players)
+        human_ready = self.get_ready_count()
+        total_players = human_count + self.ai_count
         
-        return (len(self.players) >= self.min_players and 
-                self.get_ready_count() == len(self.players) and
-                not self.game_started)
+        # Need at least 1 human player
+        if human_count < 1:
+            return False
+        
+        if self.game_started:
+            return False
+        
+        # All human players must be ready
+        if human_ready != human_count:
+            return False
+        
+        # Total players (human + AI) must meet minimum requirement
+        return total_players >= self.min_players
     
     def reset_for_rematch(self):
         """Reset room state for a new game (after game over)"""
@@ -106,7 +120,10 @@ class Room:
             "player_count": len(self.players),
             "ready_count": self.get_ready_count(),
             "can_start": self.can_start(),
-            "game_started": self.game_started
+            "game_started": self.game_started,
+            "ai_count": self.ai_count,
+            "ai_difficulties": self.ai_difficulties,
+            "ai_names": self.ai_names
         }
         
         # Add brawler-specific fields if it's a brawler game
@@ -238,7 +255,10 @@ class RoomManager:
                                  game_mode: Optional[GameMode] = None,
                                  barrier_density: Optional[str] = None,
                                  map_size: Optional[str] = None,
-                                 time_limit: Optional[str] = None) -> Optional[Room]:
+                                 time_limit: Optional[str] = None,
+                                 ai_count: Optional[int] = None,
+                                 ai_difficulties: Optional[List[str]] = None,
+                                 ai_names: Optional[List[str]] = None) -> Optional[Room]:
         """Host can change game settings"""
         room = self.get_player_room(player_id)
         if room and room.host_id == player_id and not room.game_started:
@@ -252,5 +272,12 @@ class RoomManager:
                 room.map_size = map_size
             if time_limit and time_limit in ["30s", "1m", "2m", "3m"]:
                 room.time_limit = time_limit
+            if ai_count is not None and 0 <= ai_count <= 3:
+                room.ai_count = ai_count
+            if ai_difficulties is not None and isinstance(ai_difficulties, list):
+                valid = ["amateur", "semi_pro", "pro", "world_class"]
+                room.ai_difficulties = [d if d in valid else "amateur" for d in ai_difficulties]
+            if ai_names is not None and isinstance(ai_names, list):
+                room.ai_names = [str(n)[:16] for n in ai_names]
             return room
         return None

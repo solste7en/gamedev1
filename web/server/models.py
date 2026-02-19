@@ -55,6 +55,49 @@ class PlayerState(Enum):
     SPECTATING = "spectating"
 
 
+class AIDifficulty(Enum):
+    AMATEUR = "amateur"
+    SEMI_PRO = "semi_pro"
+    PRO = "pro"
+    WORLD_CLASS = "world_class"
+
+
+AI_DIFFICULTY_SETTINGS = {
+    "amateur": {
+        "name": "Amateur",
+        "reaction_time": 500,  # ms between decisions
+        "food_seeking": 0.4,   # Probability to seek food vs random
+        "look_ahead": 1,       # How many cells to look ahead for safety
+        "deterministic": False, # Use random fallback
+        "dead_end_check": False, # Check for dead ends
+    },
+    "semi_pro": {
+        "name": "Semi-Pro",
+        "reaction_time": 250,
+        "food_seeking": 0.85,
+        "look_ahead": 3,
+        "deterministic": False,
+        "dead_end_check": False,
+    },
+    "pro": {
+        "name": "Pro",
+        "reaction_time": 120,
+        "food_seeking": 0.95,
+        "look_ahead": 5,
+        "deterministic": True,  # Always seek food, no random fallback
+        "dead_end_check": True, # Avoid dead ends
+    },
+    "world_class": {
+        "name": "World-Class",
+        "reaction_time": 50,
+        "food_seeking": 1.0,   # Always seek food
+        "look_ahead": 7,
+        "deterministic": True,
+        "dead_end_check": True,
+    }
+}
+
+
 @dataclass
 class Position:
     x: int
@@ -164,6 +207,9 @@ class Player:
     quadrant: int = 0  # 0-3 for which quadrant they're in
     death_time: Optional[float] = None
     rank: int = 0
+    is_ai: bool = False
+    ai_difficulty: str = "amateur"  # amateur, semi_pro, pro, world_class
+    ai_last_decision: float = 0  # Timestamp of last AI decision
     
     def to_dict(self):
         return {
@@ -172,7 +218,9 @@ class Player:
             "state": self.state.value,
             "quadrant": self.quadrant,
             "rank": self.rank,
-            "snake": self.snake.to_dict() if self.snake else None
+            "snake": self.snake.to_dict() if self.snake else None,
+            "is_ai": self.is_ai,
+            "ai_difficulty": self.ai_difficulty
         }
 
 

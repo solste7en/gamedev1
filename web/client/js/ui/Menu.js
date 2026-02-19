@@ -27,7 +27,6 @@ export class Menu {
         
         // Buttons
         this.btnSinglePlayer = document.getElementById('btn-single-player');
-        this.btnCreateRoom = document.getElementById('btn-create-room');
         this.btnJoinRoom = document.getElementById('btn-join-room');
         this.btnBrowseRooms = document.getElementById('btn-browse-rooms');
         this.btnLeaderboard = document.getElementById('btn-leaderboard');
@@ -56,8 +55,7 @@ export class Menu {
         });
         
         // Menu buttons
-        this.btnSinglePlayer.addEventListener('click', () => this.startSinglePlayer());
-        this.btnCreateRoom.addEventListener('click', () => this.createRoom());
+        this.btnSinglePlayer.addEventListener('click', () => this.createRoom());
         this.btnJoinRoom.addEventListener('click', () => this.showJoinModal());
         this.btnBrowseRooms.addEventListener('click', () => this.showBrowseScreen());
         this.btnLeaderboard.addEventListener('click', () => this.showLeaderboard());
@@ -78,11 +76,28 @@ export class Menu {
     }
     
     /**
+     * Get currently selected game type
+     */
+    getSelectedGame() {
+        const brawlerBtn = document.getElementById('btn-brawler-game');
+        if (brawlerBtn && brawlerBtn.classList.contains('selected')) {
+            return 'brawler';
+        }
+        return 'snake';
+    }
+    
+    /**
      * Start single player mode
      */
     startSinglePlayer() {
         const name = this.getPlayerName();
-        this.network.createRoom(name, 'snake_classic', 'single_player');
+        const selectedGame = this.getSelectedGame();
+        
+        if (selectedGame === 'brawler') {
+            this.network.createRoom(name, 'brawler', 'single_player');
+        } else {
+            this.network.createRoom(name, 'snake_classic', 'single_player');
+        }
     }
     
     /**
@@ -116,7 +131,13 @@ export class Menu {
      */
     createRoom() {
         const name = this.getPlayerName();
-        this.network.createRoom(name, 'snake_classic', 'survival');
+        const selectedGame = this.getSelectedGame();
+        
+        if (selectedGame === 'brawler') {
+            this.network.createRoom(name, 'brawler', 'survival');
+        } else {
+            this.network.createRoom(name, 'snake_classic', 'survival');
+        }
     }
     
     /**
@@ -258,8 +279,21 @@ export class Menu {
      */
     showLeaderboard() {
         this.leaderboardModal.classList.remove('hidden');
-        this.leaderboardList.innerHTML = '<div class="loading">Loading...</div>';
-        this.network.getLeaderboard();
+        
+        const selectedGame = this.getSelectedGame();
+        if (selectedGame === 'brawler') {
+            // Show "In Development" banner for Brawler
+            this.leaderboardList.innerHTML = `
+                <div class="leaderboard-banner">
+                    <div class="banner-icon">🚧</div>
+                    <div class="banner-title">In Development</div>
+                    <div class="banner-text">Brawler leaderboard coming soon!</div>
+                </div>
+            `;
+        } else {
+            this.leaderboardList.innerHTML = '<div class="loading">Loading...</div>';
+            this.network.getLeaderboard();
+        }
     }
     
     /**
@@ -267,6 +301,18 @@ export class Menu {
      */
     hideLeaderboard() {
         this.leaderboardModal.classList.add('hidden');
+    }
+    
+    /**
+     * Format game mode for display
+     */
+    formatGameMode(mode) {
+        const modeNames = {
+            'single_player': 'Solo',
+            'survival': 'Survival',
+            'high_score': 'High Score'
+        };
+        return modeNames[mode] || mode || 'Solo';
     }
     
     /**
@@ -292,9 +338,12 @@ export class Menu {
                 item.classList.add('rank-silver');
             }
             
+            const gameMode = this.formatGameMode(entry.game_mode);
+            
             item.innerHTML = `
                 <span class="entry-rank">#${rank}</span>
                 <span class="entry-name">${this.escapeHtml(entry.player_name)}</span>
+                <span class="entry-mode">${gameMode}</span>
                 <span class="entry-score">${entry.score.toLocaleString()}</span>
                 <span class="entry-date">${entry.date}</span>
             `;

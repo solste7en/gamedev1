@@ -49,6 +49,9 @@ export class Renderer {
     resize(width, height) {
         if (this.app) {
             this.app.renderer.resize(width, height);
+            // Keep the canvas CSS size in sync so it isn't clipped by the DOM
+            this.canvas.style.width = width + 'px';
+            this.canvas.style.height = height + 'px';
         }
     }
     

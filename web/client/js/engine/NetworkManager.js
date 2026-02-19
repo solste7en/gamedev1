@@ -180,7 +180,7 @@ export class NetworkManager {
         return this.send({ type: 'ready', ready: ready });
     }
     
-    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null, timeLimit = null) {
+    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null, timeLimit = null, aiCount = null, aiDifficulties = null, aiNames = null) {
         const data = {
             type: 'set_settings',
             game_type: gameType,
@@ -194,6 +194,15 @@ export class NetworkManager {
         }
         if (timeLimit) {
             data.time_limit = timeLimit;
+        }
+        if (aiCount !== null && aiCount !== undefined) {
+            data.ai_count = aiCount;
+        }
+        if (aiDifficulties && Array.isArray(aiDifficulties)) {
+            data.ai_difficulties = aiDifficulties;
+        }
+        if (aiNames && Array.isArray(aiNames)) {
+            data.ai_names = aiNames;
         }
         return this.send(data);
     }
@@ -218,12 +227,13 @@ export class NetworkManager {
         return this.send({ type: 'get_leaderboard' });
     }
     
-    submitScore(playerName, score, gameType) {
+    submitScore(playerName, score, gameType, gameMode) {
         return this.send({
             type: 'submit_score',
             player_name: playerName,
             score: score,
-            game_type: gameType
+            game_type: gameType,
+            game_mode: gameMode
         });
     }
     

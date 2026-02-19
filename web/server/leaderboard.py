@@ -16,6 +16,7 @@ class LeaderboardEntry:
     score: int
     date: str  # YYYY-MM-DD format
     game_type: str  # snake_classic or snake_3d
+    game_mode: str = "single_player"  # single_player, survival, high_score
     
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -66,7 +67,8 @@ class LeaderboardManager:
         """Sort entries by score (desc), then by date (asc for tiebreaker - earlier is higher)"""
         self.entries.sort(key=lambda e: (-e.score, e.date))
     
-    def add_score(self, player_name: str, score: int, game_type: str = "snake_classic") -> Optional[int]:
+    def add_score(self, player_name: str, score: int, game_type: str = "snake_classic", 
+                   game_mode: str = "single_player") -> Optional[int]:
         """
         Add a score to the leaderboard.
         Returns the rank (1-indexed) if it made the leaderboard, None otherwise.
@@ -77,7 +79,8 @@ class LeaderboardManager:
                 player_name=player_name,
                 score=score,
                 date=date,
-                game_type=game_type
+                game_type=game_type,
+                game_mode=game_mode
             )
             
             # Add entry

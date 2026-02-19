@@ -2,6 +2,10 @@
  * Lobby - Game lobby UI controller
  */
 
+const AI_ICONS = ['🤖', '🐍', '👾', '🎮', '🦾', '🧠', '👻', '🔥', '⚡', '🌟', '🦊', '💀'];
+const AI_DIFF_LEVELS = ['amateur', 'semi_pro', 'pro', 'world_class'];
+const AI_DIFF_LABELS = { amateur: 'Amateur', semi_pro: 'Semi-Pro', pro: 'Pro', world_class: 'World-Class' };
+
 export class Lobby {
     constructor(networkManager) {
         this.network = networkManager;
@@ -12,6 +16,9 @@ export class Lobby {
         
         this.onGameStart = null;  // Callback when game starts
         this.onShowLeaderboard = null;  // Callback to show leaderboard
+        
+        // Per-bot config state: [{name, icon, difficulty}, ...]
+        this.aiConfigs = [];
         
         this.bindElements();
         this.setupEventListeners();
@@ -28,12 +35,12 @@ export class Lobby {
         this.chatMessages = document.getElementById('chat-messages');
         this.chatInput = document.getElementById('chat-input');
         
-        this.selectGameType = document.getElementById('select-game-type');
         this.selectGameMode = document.getElementById('select-game-mode');
         this.selectBarrierDensity = document.getElementById('select-barrier-density');
         this.selectMapSize = document.getElementById('select-map-size');
         this.selectTimeLimit = document.getElementById('select-time-limit');
         this.timeLimitRow = document.getElementById('time-limit-row');
+        this.selectAICount = document.getElementById('select-ai-count');
         
         this.btnReady = document.getElementById('btn-ready');
         this.btnStartGame = document.getElementById('btn-start-game');
@@ -58,7 +65,6 @@ export class Lobby {
             if (e.key === 'Enter') this.sendChat();
         });
         
-        this.selectGameType.addEventListener('change', () => this.updateSettings());
         this.selectGameMode.addEventListener('change', () => {
             this.updateSettings();
             this.updateTimeLimitVisibility();
@@ -66,6 +72,12 @@ export class Lobby {
         this.selectBarrierDensity.addEventListener('change', () => this.updateSettings());
         this.selectMapSize.addEventListener('change', () => this.updateSettings());
         this.selectTimeLimit.addEventListener('change', () => this.updateSettings());
+        
+        this.selectAICount?.addEventListener('change', () => {
+            this.syncAIConfigs();
+            this.updateSettings();
+            this.updatePlayerList();
+        });
     }
     
     /**
@@ -80,6 +92,13 @@ export class Lobby {
         this.isHost = room.host_id === playerId;
         this.isReady = false;
         
+        // Reset aiConfigs and sync from room
+        this.aiConfigs = [];
+        if (this.selectAICount) {
+            this.selectAICount.value = (room.ai_count || 0).toString();
+        }
+        this.syncAIConfigs(room.ai_difficulties || [], room.ai_names || []);
+        
         this.lobbyScreen.classList.remove('hidden');
         this.lobbyScreen.classList.add('active');
         
@@ -92,10 +111,13 @@ export class Lobby {
         this.chatMessages.innerHTML = '';
         this.addSystemMessage('Welcome to the lobby!');
         
-        // Auto-ready (but NOT auto-start) for single player mode
-        // Player can adjust settings then click "Start Game" manually
-        if (this.isSinglePlayer()) {
-            this.addSystemMessage('Single player mode - click Start Game when ready!');
+        // Auto-ready for single player mode OR when AI opponents are set
+        // (AI bots are always ready, so no need for the human to click ready)
+        if (this.shouldAutoReady()) {
+            const msg = this.isSinglePlayer()
+                ? 'Single player mode - click Start Game when ready!'
+                : 'AI opponents set - you are auto-readied. Click Start Game!';
+            this.addSystemMessage(msg);
             // Auto-ready after a brief delay
             setTimeout(() => {
                 if (!this.isReady) {
@@ -119,12 +141,66 @@ export class Lobby {
      */
     updateRoomDisplay() {
         this.roomCodeDisplay.textContent = this.room.code;
-        this.selectGameType.value = this.room.game_type;
-        this.selectGameMode.value = this.room.game_mode;
+        const mode = this.room.game_mode;
+        // Map legacy 'single_player' to 'survival' since we no longer show that option
+        this.selectGameMode.value = (mode === 'single_player') ? 'survival' : (mode || 'survival');
         this.selectBarrierDensity.value = this.room.barrier_density || 'none';
         this.selectMapSize.value = this.room.map_size || 'medium';
         this.selectTimeLimit.value = this.room.time_limit || '1m';
         this.updateTimeLimitVisibility();
+    }
+    
+    /**
+     * Sync aiConfigs array to match current ai count, preserving existing entries.
+     * Should be called when ai count changes.
+     */
+    syncAIConfigs(serverDifficulties = null, serverNames = null) {
+        const aiCount = parseInt(this.selectAICount?.value || '0');
+        const defaultIcons = ['🤖', '👾', '🦾', '🧠'];
+        
+        // Grow or shrink the array
+        while (this.aiConfigs.length < aiCount) {
+            const i = this.aiConfigs.length;
+            this.aiConfigs.push({
+                name: `Bot ${i + 1}`,
+                icon: defaultIcons[i % defaultIcons.length],
+                difficulty: (serverDifficulties && serverDifficulties[i]) || 'amateur'
+            });
+        }
+        this.aiConfigs.length = aiCount;
+        
+        // Apply server values if given (sync from room state)
+        if (serverDifficulties) {
+            serverDifficulties.forEach((d, i) => {
+                if (this.aiConfigs[i]) this.aiConfigs[i].difficulty = d;
+            });
+        }
+        if (serverNames) {
+            serverNames.forEach((n, i) => {
+                if (this.aiConfigs[i]) this.aiConfigs[i].name = n;
+            });
+        }
+    }
+    
+    /**
+     * Cycle the icon for an AI bot
+     */
+    cycleAIIcon(index) {
+        const current = this.aiConfigs[index].icon;
+        const idx = AI_ICONS.indexOf(current);
+        this.aiConfigs[index].icon = AI_ICONS[(idx + 1) % AI_ICONS.length];
+        this.updatePlayerList();
+    }
+    
+    /**
+     * Cycle the difficulty for an AI bot
+     */
+    cycleAIDifficulty(index) {
+        const current = this.aiConfigs[index].difficulty;
+        const idx = AI_DIFF_LEVELS.indexOf(current);
+        this.aiConfigs[index].difficulty = AI_DIFF_LEVELS[(idx + 1) % AI_DIFF_LEVELS.length];
+        this.updatePlayerList();
+        this.updateSettings();
     }
     
     /**
@@ -135,16 +211,12 @@ export class Lobby {
         
         const colors = ['#3498DB', '#E74C3C', '#2ECC71', '#F1C40F'];
         
-        this.room.players.forEach((player, index) => {
+        this.room.players.forEach((player) => {
             const card = document.createElement('div');
             card.className = 'player-card';
             
-            if (player.state === 'ready') {
-                card.classList.add('ready');
-            }
-            if (player.id === this.room.host_id) {
-                card.classList.add('host');
-            }
+            if (player.state === 'ready') card.classList.add('ready');
+            if (player.id === this.room.host_id) card.classList.add('host');
             
             const color = colors[player.quadrant % colors.length];
             const isMe = player.id === this.playerId;
@@ -164,7 +236,58 @@ export class Lobby {
             this.playerList.appendChild(card);
         });
         
-        // Update start button visibility
+        // AI bot slots
+        const aiCount = this.room.ai_count || 0;
+        for (let i = 0; i < aiCount; i++) {
+            // Ensure config exists
+            if (!this.aiConfigs[i]) {
+                this.aiConfigs[i] = {
+                    name: `Bot ${i + 1}`,
+                    icon: AI_ICONS[i % AI_ICONS.length],
+                    difficulty: (this.room.ai_difficulties && this.room.ai_difficulties[i]) || 'amateur'
+                };
+            }
+            const cfg = this.aiConfigs[i];
+            const diffLabel = AI_DIFF_LABELS[cfg.difficulty] || 'Amateur';
+            const diffClass = 'diff-' + cfg.difficulty.replace('_', '-');
+            
+            const card = document.createElement('div');
+            card.className = 'player-card ready ai-slot' + (this.isHost ? ' ai-configurable' : '');
+            
+            if (this.isHost) {
+                card.innerHTML = `
+                    <button class="ai-icon-btn" title="Click to change icon">${cfg.icon}</button>
+                    <div class="player-details">
+                        <input class="ai-name-input" value="${this.escapeHtml(cfg.name)}" maxlength="12" placeholder="Bot name…" />
+                        <button class="ai-diff-badge ${diffClass}" title="Click to change difficulty">${diffLabel} ▶</button>
+                    </div>
+                `;
+                
+                const iconBtn = card.querySelector('.ai-icon-btn');
+                const nameInput = card.querySelector('.ai-name-input');
+                const diffBtn = card.querySelector('.ai-diff-badge');
+                
+                // Capture index for closures
+                const idx = i;
+                iconBtn.addEventListener('click', () => this.cycleAIIcon(idx));
+                nameInput.addEventListener('input', (e) => {
+                    this.aiConfigs[idx].name = e.target.value;
+                    this.updateSettings();
+                });
+                diffBtn.addEventListener('click', () => this.cycleAIDifficulty(idx));
+            } else {
+                card.innerHTML = `
+                    <div class="player-avatar" style="background-color:#555">${cfg.icon}</div>
+                    <div class="player-details">
+                        <div class="player-name">${this.escapeHtml(cfg.name)}</div>
+                        <div class="player-status">${diffLabel} · Ready</div>
+                    </div>
+                `;
+            }
+            
+            this.playerList.appendChild(card);
+        }
+        
         this.updateStartButton();
     }
     
@@ -173,14 +296,35 @@ export class Lobby {
      */
     updateHostControls() {
         // Only host can change settings
-        this.selectGameType.disabled = !this.isHost;
         this.selectGameMode.disabled = !this.isHost;
         this.selectBarrierDensity.disabled = !this.isHost;
         this.selectMapSize.disabled = !this.isHost;
         this.selectTimeLimit.disabled = !this.isHost;
         
+        if (this.selectAICount) {
+            this.selectAICount.disabled = !this.isHost;
+        }
+        
         // Settings visibility
         this.lobbySettings.style.display = this.isHost ? 'block' : 'none';
+        
+        // Sync room settings to UI
+        if (this.room) {
+            const mode = this.room.game_mode;
+            this.selectGameMode.value = (mode === 'single_player') ? 'survival' : (mode || 'survival');
+            this.selectBarrierDensity.value = this.room.barrier_density || 'none';
+            this.selectMapSize.value = this.room.map_size || 'medium';
+            this.selectTimeLimit.value = this.room.time_limit || '1m';
+            
+            if (this.selectAICount) {
+                this.selectAICount.value = (this.room.ai_count || 0).toString();
+            }
+            
+            // Sync aiConfigs from room state
+            this.syncAIConfigs(this.room.ai_difficulties || [], this.room.ai_names || []);
+            
+            this.updateTimeLimitVisibility();
+        }
     }
     
     /**
@@ -195,25 +339,41 @@ export class Lobby {
     }
     
     /**
-     * Check if this is single player mode
+     * Check if this is single player mode (no other human players, AI or alone)
      */
     isSinglePlayer() {
-        return this.room && this.room.game_mode === 'single_player';
+        return this.room && (
+            this.room.game_mode === 'single_player' ||
+            (this.room.players.length <= 1 && (this.room.ai_count || 0) > 0)
+        );
     }
     
     /**
-     * Update UI for single player mode
+     * Check if player should be auto-readied.
+     * True when there are AI opponents (AI bots are always ready) or playing alone.
+     */
+    shouldAutoReady() {
+        if (!this.room) return false;
+        if (this.room.game_mode === 'single_player') return true;
+        if ((this.room.ai_count || 0) > 0) return true;
+        // Alone in room
+        if (this.room.players.length === 1) return true;
+        return false;
+    }
+    
+    /**
+     * Update UI for single player mode or AI-opponent mode
      * @param {boolean} isNewRoom - True if this is a newly created room
      */
     updateSinglePlayerMode(isNewRoom = true) {
-        if (this.isSinglePlayer()) {
-            // Gray out ready button for single player (auto-ready)
+        if (this.shouldAutoReady()) {
+            // Gray out ready button - player is automatically ready
             this.btnReady.disabled = true;
             this.btnReady.classList.add('btn-secondary');
             this.btnReady.classList.remove('btn-primary');
-            this.btnReady.textContent = 'Ready (Solo)';
+            this.btnReady.textContent = this.isSinglePlayer() ? 'Ready (Solo)' : 'Ready (AI Mode)';
         } else {
-            // Normal mode - enable ready button
+            // Normal multiplayer mode - enable ready button
             this.btnReady.disabled = false;
             if (!this.isReady) {
                 this.btnReady.textContent = 'Ready';
@@ -247,17 +407,40 @@ export class Lobby {
     }
     
     /**
+     * Get per-AI difficulty values from aiConfigs
+     */
+    getAIDifficulties() {
+        const count = parseInt(this.selectAICount?.value || '0');
+        return this.aiConfigs.slice(0, count).map(c => c.difficulty);
+    }
+    
+    /**
+     * Get per-AI names from aiConfigs
+     */
+    getAINames() {
+        const count = parseInt(this.selectAICount?.value || '0');
+        return this.aiConfigs.slice(0, count).map((c, i) => c.name || `Bot ${i + 1}`);
+    }
+    
+    /**
      * Update settings (host only)
      */
     updateSettings() {
         if (!this.isHost) return;
         
+        const aiCount = this.selectAICount ? parseInt(this.selectAICount.value) : 0;
+        const aiDifficulties = this.getAIDifficulties();
+        const aiNames = this.getAINames();
+        
         this.network.setSettings(
-            this.selectGameType.value,
+            'snake_classic',
             this.selectGameMode.value,
             this.selectBarrierDensity.value,
             this.selectMapSize.value,
-            this.selectTimeLimit.value
+            this.selectTimeLimit.value,
+            aiCount,
+            aiDifficulties,
+            aiNames
         );
     }
     
@@ -340,13 +523,32 @@ export class Lobby {
      * Update room state
      */
     updateRoom(room) {
+        const prevAiCount = this.room ? (this.room.ai_count || 0) : 0;
         this.room = room;
         this.isHost = room.host_id === this.playerId;
+        
+        // Sync ai count selector and aiConfigs from incoming room data
+        if (this.selectAICount) {
+            this.selectAICount.value = (room.ai_count || 0).toString();
+        }
+        this.syncAIConfigs(room.ai_difficulties || [], room.ai_names || []);
+        
         this.updateRoomDisplay();
         this.updatePlayerList();
         this.updateHostControls();
         // Pass false since this is an update to an existing room, not a new one
         this.updateSinglePlayerMode(false);
+        
+        // If AI count just changed to > 0, auto-ready the player
+        const newAiCount = room.ai_count || 0;
+        if (newAiCount > 0 && prevAiCount === 0 && !this.isReady) {
+            setTimeout(() => {
+                if (!this.isReady && this.shouldAutoReady()) {
+                    this.network.setReady(true);
+                    this.isReady = true;
+                }
+            }, 200);
+        }
     }
     
     /**

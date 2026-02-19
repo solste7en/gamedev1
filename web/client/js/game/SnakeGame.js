@@ -23,6 +23,29 @@ export class SnakeGame {
         
         // Particle system
         this.particles = null;
+        
+        // Graphics caching for performance optimization
+        // Static elements are rendered once and reused
+        this.graphicsCache = {
+            staticLayer: null,       // Quadrant backgrounds, grid, walls (rendered once)
+            staticRendered: false,   // Flag to track if static layer is ready
+            wallBrickColors: new Map(), // Pre-computed brick colors per wall
+            // Dynamic element pools
+            snakeGraphics: [],       // Pool of graphics for snake segments
+            foodGraphics: [],        // Pool of graphics for food items
+            textObjects: new Map(),  // Cached text objects by key
+        };
+        
+        // Track what was rendered last frame for change detection
+        this.lastRenderState = {
+            quadrantBoundsHash: null,
+            playerAliveStates: {},
+            foodHash: null,
+            snakePositions: {},
+        };
+        
+        // Frame counter for tongue animation (deterministic)
+        this.frameCount = 0;
     }
     
     /**
@@ -74,15 +97,15 @@ export class SnakeGame {
     updateCanvasSize() {
         if (!this.gameState) return;
         
-        const numPlayers = Object.keys(this.gameState.players).length;
-        const isSinglePlayer = this.gameState.mode === 'single_player' || numPlayers === 1;
+        // Derive layout from actual quadrant bounds, not from mode or player count.
+        // The server creates 2 quadrants even for single_player when AI bots are present.
+        const numQuadrants = Object.keys(this.gameState.quadrant_bounds).length;
         
-        // Calculate grid dimensions
         let cols, rows;
-        if (isSinglePlayer) {
+        if (numQuadrants <= 1) {
             cols = 1;
             rows = 1;
-        } else if (numPlayers <= 2) {
+        } else if (numQuadrants <= 2) {
             cols = 2;
             rows = 1;
         } else {
@@ -97,8 +120,9 @@ export class SnakeGame {
             ? (this.gameState.quadrant_bounds[0].y_max - this.gameState.quadrant_bounds[0].y_min)
             : 20;
         
+        // Labels render inside each quadrant's top area; 30px top offset + bottom padding
         const width = cols * quadrantWidth * this.cellSize + this.padding * 2;
-        const height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 50; // Extra for labels
+        const height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
         
         this.renderer.resize(width, height);
         this.renderer.setGrid(quadrantWidth * cols, quadrantHeight * rows, this.cellSize);
@@ -110,6 +134,8 @@ export class SnakeGame {
     start() {
         this.running = true;
         this.hud.reset();
+        // Reset graphics cache for new game
+        this.resetGraphicsCache();
     }
     
     /**
@@ -119,6 +145,36 @@ export class SnakeGame {
         this.running = false;
         this.input.clearControls();
         this.input.stop();
+    }
+    
+    /**
+     * Reset graphics cache (call when starting new game)
+     */
+    resetGraphicsCache() {
+        // Clear static layer
+        if (this.graphicsCache.staticLayer) {
+            this.graphicsCache.staticLayer.destroy({ children: true });
+            this.graphicsCache.staticLayer = null;
+        }
+        this.graphicsCache.staticRendered = false;
+        this.graphicsCache.wallBrickColors.clear();
+        
+        // Clear pools
+        this.graphicsCache.snakeGraphics.forEach(g => g.destroy());
+        this.graphicsCache.snakeGraphics = [];
+        this.graphicsCache.foodGraphics.forEach(g => g.destroy());
+        this.graphicsCache.foodGraphics = [];
+        this.graphicsCache.textObjects.forEach(t => t.destroy());
+        this.graphicsCache.textObjects.clear();
+        
+        // Reset render state
+        this.lastRenderState = {
+            quadrantBoundsHash: null,
+            playerAliveStates: {},
+            foodHash: null,
+            snakePositions: {},
+        };
+        this.frameCount = 0;
     }
     
     /**
@@ -199,14 +255,66 @@ export class SnakeGame {
     }
     
     /**
-     * Render the game
+     * Render the game (optimized with caching)
      */
     render() {
         if (!this.gameState) return;
         
-        this.renderer.clear();
+        this.frameCount++;
         
-        // Render each player's quadrant
+        const contentOffsetX = this.padding;
+        const contentOffsetY = this.padding + 30;
+        
+        // Step 1: Render static layer (backgrounds, grid, walls) - only once
+        if (!this.graphicsCache.staticRendered) {
+            this.renderStaticLayer(contentOffsetX, contentOffsetY);
+        }
+        
+        // Step 2: Clear and re-render dynamic elements (snake, food, text)
+        this.renderDynamicLayer(contentOffsetX, contentOffsetY);
+    }
+    
+    /**
+     * Render static layer (backgrounds, grid, walls) - called once per game
+     */
+    renderStaticLayer(contentOffsetX, contentOffsetY) {
+        // Create static layer container
+        this.graphicsCache.staticLayer = new PIXI.Container();
+        this.renderer.gameContainer.addChild(this.graphicsCache.staticLayer);
+        
+        // Pre-compute brick colors for all walls (deterministic)
+        this.precomputeWallBrickColors();
+        
+        // Render each quadrant's static elements
+        for (const [playerId, player] of Object.entries(this.gameState.players)) {
+            const bounds = this.gameState.quadrant_bounds[player.quadrant];
+            if (!bounds) continue;
+            
+            const color = player.snake ? player.snake.color : '#FFFFFF';
+            
+            // Draw quadrant background and grid (static)
+            this.drawQuadrantBackgroundCached(bounds, color, contentOffsetX, contentOffsetY);
+            
+            // Draw walls (static)
+            const walls = this.gameState.walls[player.quadrant] || [];
+            walls.forEach((wall, index) => {
+                const wallKey = `${player.quadrant}_${index}`;
+                this.drawWallCached(wall, wallKey, contentOffsetX, contentOffsetY);
+            });
+        }
+        
+        this.graphicsCache.staticRendered = true;
+    }
+    
+    /**
+     * Render dynamic layer (snake, food, text) - called every frame
+     */
+    renderDynamicLayer(contentOffsetX, contentOffsetY) {
+        // Track used graphics from pools
+        let snakeGraphicsIndex = 0;
+        let foodGraphicsIndex = 0;
+        
+        // Render each player's dynamic elements
         for (const [playerId, player] of Object.entries(this.gameState.players)) {
             const bounds = this.gameState.quadrant_bounds[player.quadrant];
             if (!bounds) continue;
@@ -214,84 +322,137 @@ export class SnakeGame {
             const color = player.snake ? player.snake.color : '#FFFFFF';
             const isAlive = player.snake ? player.snake.alive : false;
             
-            // Draw quadrant background
-            this.renderer.drawQuadrantBackground(
-                bounds, 
-                color, 
-                isAlive,
-                this.padding,
-                this.padding + 30  // Offset for player name
-            );
-            
-            // Draw walls in this quadrant
-            const walls = this.gameState.walls[player.quadrant] || [];
-            walls.forEach(wall => {
-                this.drawWall(wall, this.padding, this.padding + 30);
-            });
-            
-            // Draw player name above quadrant
-            const quadrantX = this.padding + bounds.x_min * this.cellSize;
+            // Update player name text (cached)
+            const quadrantX = contentOffsetX + bounds.x_min * this.cellSize;
+            const quadrantY = contentOffsetY + bounds.y_min * this.cellSize;
             const quadrantWidth = (bounds.x_max - bounds.x_min) * this.cellSize;
             
-            this.renderer.drawText(
+            this.updateCachedText(
+                `name_${playerId}`,
                 `${player.name}${!isAlive ? ' (DEAD)' : ''}`,
                 quadrantX + quadrantWidth / 2,
-                this.padding + 15,
+                quadrantY + 10,
                 {
                     fontSize: 12,
-                    fill: parseInt(color.replace('#', ''), 16),
+                    fill: this.parseColor(color),
                     fontWeight: 'bold'
                 }
             );
             
-            // Draw food in this quadrant
+            // Draw food (pooled)
             const foods = this.gameState.foods[player.quadrant] || [];
             foods.forEach(food => {
-                this.drawAnimal(food, this.padding, this.padding + 30);
+                foodGraphicsIndex = this.drawAnimalPooled(food, contentOffsetX, contentOffsetY, foodGraphicsIndex);
             });
             
-            // Draw snake
+            // Draw snake (pooled)
             if (player.snake) {
-                this.drawDetailedSnake(player.snake, this.padding, this.padding + 30);
+                snakeGraphicsIndex = this.drawDetailedSnakePooled(player.snake, contentOffsetX, contentOffsetY, snakeGraphicsIndex);
                 
-                // Add eat particles
+                // Combo indicator (cached text)
                 if (player.snake.combo > 0) {
                     const head = player.snake.body[0];
                     if (head) {
-                        const x = this.padding + head.x * this.cellSize + this.cellSize / 2;
-                        const y = this.padding + 30 + head.y * this.cellSize + this.cellSize / 2;
+                        const x = contentOffsetX + head.x * this.cellSize + this.cellSize / 2;
+                        const y = contentOffsetY + head.y * this.cellSize + this.cellSize / 2;
                         
-                        // Combo indicator
-                        this.renderer.drawText(
+                        this.updateCachedText(
+                            `combo_${playerId}`,
                             `x${player.snake.combo}`,
                             x,
                             y - 20,
-                            {
-                                fontSize: 10,
-                                fill: 0xF1C40F,
-                                fontWeight: 'bold'
-                            }
+                            { fontSize: 10, fill: 0xF1C40F, fontWeight: 'bold' }
                         );
                     }
+                } else {
+                    // Hide combo text if no combo
+                    this.hideCachedText(`combo_${playerId}`);
                 }
             }
+        }
+        
+        // Hide unused pooled graphics
+        this.hideUnusedPooledGraphics(snakeGraphicsIndex, foodGraphicsIndex);
+    }
+    
+    /**
+     * Draw quadrant background (cached in static layer)
+     */
+    drawQuadrantBackgroundCached(bounds, playerColor, offsetX, offsetY) {
+        const x = offsetX + bounds.x_min * this.cellSize;
+        const y = offsetY + bounds.y_min * this.cellSize;
+        const width = (bounds.x_max - bounds.x_min) * this.cellSize;
+        const height = (bounds.y_max - bounds.y_min) * this.cellSize;
+        
+        const graphics = new PIXI.Graphics();
+        
+        // Background
+        graphics.beginFill(0x1E293B);
+        graphics.drawRect(x, y, width, height);
+        graphics.endFill();
+        
+        // Border with player color
+        const borderColor = this.parseColor(playerColor);
+        graphics.lineStyle(3, borderColor, 1);
+        graphics.drawRect(x, y, width, height);
+        
+        // Grid lines
+        graphics.lineStyle(1, 0x334155, 0.3);
+        for (let gx = bounds.x_min; gx <= bounds.x_max; gx++) {
+            graphics.moveTo(offsetX + gx * this.cellSize, y);
+            graphics.lineTo(offsetX + gx * this.cellSize, y + height);
+        }
+        for (let gy = bounds.y_min; gy <= bounds.y_max; gy++) {
+            graphics.moveTo(x, offsetY + gy * this.cellSize);
+            graphics.lineTo(x + width, offsetY + gy * this.cellSize);
+        }
+        
+        this.graphicsCache.staticLayer.addChild(graphics);
+    }
+    
+    /**
+     * Pre-compute brick colors for walls (deterministic, no Math.random in render)
+     */
+    precomputeWallBrickColors() {
+        const brickColor = 0x654321;
+        const brickLight = 0x8B5A2B;
+        
+        for (const [quadrant, walls] of Object.entries(this.gameState.walls)) {
+            walls.forEach((wall, wallIndex) => {
+                const wallKey = `${quadrant}_${wallIndex}`;
+                const colors = [];
+                
+                const width = wall.width * this.cellSize;
+                const height = wall.height * this.cellSize;
+                const brickW = this.cellSize / 2 - 1;
+                const brickH = this.cellSize / 3 - 1;
+                
+                // Use deterministic pattern based on position
+                let brickIndex = 0;
+                for (let by = 0; by < height; by += brickH + 1) {
+                    for (let bx = -brickW; bx < width + brickW; bx += brickW + 1) {
+                        // Deterministic: use a simple hash of position
+                        const useLight = ((brickIndex * 7 + wallIndex * 13) % 10) < 3;
+                        colors.push(useLight ? brickLight : brickColor);
+                        brickIndex++;
+                    }
+                }
+                
+                this.graphicsCache.wallBrickColors.set(wallKey, colors);
+            });
         }
     }
     
     /**
-     * Draw a wall/barrier
+     * Draw a wall/barrier (cached in static layer with pre-computed colors)
      */
-    drawWall(wall, offsetX, offsetY) {
+    drawWallCached(wall, wallKey, offsetX, offsetY) {
         const x = offsetX + wall.position.x * this.cellSize;
         const y = offsetY + wall.position.y * this.cellSize;
         const width = wall.width * this.cellSize;
         const height = wall.height * this.cellSize;
         
         const graphics = new PIXI.Graphics();
-        
-        // Brick colors
-        const brickColor = 0x654321;
-        const brickLight = 0x8B5A2B;
         const mortarColor = 0x505050;
         
         // Draw mortar background
@@ -299,9 +460,11 @@ export class SnakeGame {
         graphics.drawRect(x, y, width, height);
         graphics.endFill();
         
-        // Draw bricks
+        // Draw bricks with pre-computed colors (no randomness)
         const brickW = this.cellSize / 2 - 1;
         const brickH = this.cellSize / 3 - 1;
+        const brickColors = this.graphicsCache.wallBrickColors.get(wallKey) || [];
+        let colorIndex = 0;
         
         for (let by = 0; by < height; by += brickH + 1) {
             const rowOffset = (Math.floor(by / (brickH + 1)) % 2) * (brickW / 2);
@@ -313,8 +476,8 @@ export class SnakeGame {
                 if (brick_x >= x - 1 && brick_x + brickW <= x + width + 1 &&
                     brick_y >= y && brick_y + brickH <= y + height) {
                     
-                    // Random brick color variation
-                    const color = Math.random() > 0.3 ? brickColor : brickLight;
+                    const color = brickColors[colorIndex] || 0x654321;
+                    colorIndex++;
                     
                     graphics.beginFill(color);
                     graphics.drawRect(brick_x, brick_y, brickW, brickH);
@@ -332,20 +495,102 @@ export class SnakeGame {
         graphics.lineStyle(1, 0x3D2914);
         graphics.drawRect(x, y, width, height);
         
-        this.renderer.gameContainer.addChild(graphics);
+        this.graphicsCache.staticLayer.addChild(graphics);
     }
     
     /**
-     * Draw detailed animal based on type
+     * Get or create a pooled graphics object for food
      */
-    drawAnimal(food, offsetX, offsetY) {
+    getPooledFoodGraphics(index) {
+        while (this.graphicsCache.foodGraphics.length <= index) {
+            const g = new PIXI.Graphics();
+            g.visible = false;
+            this.renderer.gameContainer.addChild(g);
+            this.graphicsCache.foodGraphics.push(g);
+        }
+        return this.graphicsCache.foodGraphics[index];
+    }
+    
+    /**
+     * Get or create a pooled graphics object for snake
+     */
+    getPooledSnakeGraphics(index) {
+        while (this.graphicsCache.snakeGraphics.length <= index) {
+            const g = new PIXI.Graphics();
+            g.visible = false;
+            this.renderer.gameContainer.addChild(g);
+            this.graphicsCache.snakeGraphics.push(g);
+        }
+        return this.graphicsCache.snakeGraphics[index];
+    }
+    
+    /**
+     * Hide unused pooled graphics at end of frame
+     */
+    hideUnusedPooledGraphics(snakeIndex, foodIndex) {
+        for (let i = snakeIndex; i < this.graphicsCache.snakeGraphics.length; i++) {
+            this.graphicsCache.snakeGraphics[i].visible = false;
+        }
+        for (let i = foodIndex; i < this.graphicsCache.foodGraphics.length; i++) {
+            this.graphicsCache.foodGraphics[i].visible = false;
+        }
+    }
+    
+    /**
+     * Update or create cached text object
+     */
+    updateCachedText(key, text, x, y, style) {
+        let textObj = this.graphicsCache.textObjects.get(key);
+        
+        if (!textObj) {
+            const defaultStyle = {
+                fontFamily: 'Inter',
+                fontSize: 14,
+                fill: 0xFFFFFF,
+                align: 'center'
+            };
+            const textStyle = new PIXI.TextStyle({ ...defaultStyle, ...style });
+            textObj = new PIXI.Text(text, textStyle);
+            textObj.anchor.set(0.5);
+            this.renderer.gameContainer.addChild(textObj);
+            this.graphicsCache.textObjects.set(key, textObj);
+        } else {
+            // Update text content if changed
+            if (textObj.text !== text) {
+                textObj.text = text;
+            }
+        }
+        
+        textObj.x = x;
+        textObj.y = y;
+        textObj.visible = true;
+        
+        return textObj;
+    }
+    
+    /**
+     * Hide a cached text object
+     */
+    hideCachedText(key) {
+        const textObj = this.graphicsCache.textObjects.get(key);
+        if (textObj) {
+            textObj.visible = false;
+        }
+    }
+    
+    /**
+     * Draw animal using pooled graphics (returns next available index)
+     */
+    drawAnimalPooled(food, offsetX, offsetY, poolIndex) {
+        const graphics = this.getPooledFoodGraphics(poolIndex);
+        graphics.clear();
+        graphics.visible = true;
+        
         const baseX = offsetX + food.position.x * this.cellSize;
         const baseY = offsetY + food.position.y * this.cellSize;
         const colors = food.colors || {};
         const type = food.type;
         const cells = food.cells || [[0, 0]];
-        
-        const graphics = new PIXI.Graphics();
         
         // Draw based on animal category and type
         if (food.category === 'small') {
@@ -377,7 +622,7 @@ export class SnakeGame {
             graphics.endFill();
         }
         
-        this.renderer.gameContainer.addChild(graphics);
+        return poolIndex + 1;
     }
     
     /**
@@ -698,10 +943,10 @@ export class SnakeGame {
     }
     
     /**
-     * Draw detailed snake
+     * Draw detailed snake using pooled graphics (returns next available index)
      */
-    drawDetailedSnake(snake, offsetX, offsetY) {
-        if (!snake || !snake.body || snake.body.length === 0) return;
+    drawDetailedSnakePooled(snake, offsetX, offsetY, poolIndex) {
+        if (!snake || !snake.body || snake.body.length === 0) return poolIndex;
         
         const baseColor = this.parseColor(snake.color);
         const alpha = snake.alive ? 1 : 0.3;
@@ -719,7 +964,10 @@ export class SnakeGame {
             const brightness = 0.6 + (1 - i / snake.body.length) * 0.4;
             const segColor = this.adjustBrightness(baseColor, brightness);
             
-            const graphics = new PIXI.Graphics();
+            const graphics = this.getPooledSnakeGraphics(poolIndex);
+            graphics.clear();
+            graphics.visible = true;
+            poolIndex++;
             
             if (isHead) {
                 // Draw detailed head
@@ -751,9 +999,9 @@ export class SnakeGame {
                 graphics.drawRect(x + 3, y + 3, this.cellSize - 8, 2);
                 graphics.endFill();
             }
-            
-            this.renderer.gameContainer.addChild(graphics);
         }
+        
+        return poolIndex;
     }
     
     /**
@@ -815,8 +1063,10 @@ export class SnakeGame {
         graphics.drawCircle(eye2X - 0.5, eye2Y - 0.5, 1);
         graphics.endFill();
         
-        // Tongue (flickering effect based on time)
-        if (Math.random() > 0.7) {
+        // Tongue (deterministic flickering based on frame count, not random)
+        // Show tongue every 20 frames for 6 frames
+        const tonguePhase = this.frameCount % 20;
+        if (tonguePhase < 6) {
             graphics.lineStyle(1, 0xFF3333, alpha);
             let tongueX, tongueY, tongueEndX, tongueEndY;
             

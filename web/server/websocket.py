@@ -180,6 +180,9 @@ class ConnectionManager:
     
     async def _handle_leave_room(self, player_id: int):
         """Leave current room"""
+        # Grab websocket before removing from room
+        ws = self.active_connections.get(player_id)
+        
         room = await self.room_manager.leave_room(player_id)
         if room:
             await self.broadcast_to_room(room.code, {
@@ -187,6 +190,10 @@ class ConnectionManager:
                 "player_id": player_id,
                 "room": room.to_dict()
             })
+        
+        # Notify the leaving player to go back to the main menu
+        if ws:
+            await self.send_personal(ws, {"type": "room_left"})
     
     async def _handle_ready(self, player_id: int, data: dict):
         """Toggle ready state"""
@@ -208,6 +215,9 @@ class ConnectionManager:
         barrier_density = None
         map_size = None
         time_limit = None
+        ai_count = None
+        ai_difficulties = None
+        ai_names = None
         
         if "game_type" in data:
             try:
@@ -230,7 +240,18 @@ class ConnectionManager:
         if "time_limit" in data:
             time_limit = data["time_limit"]
         
-        room = await self.room_manager.set_game_settings(player_id, game_type, game_mode, barrier_density, map_size, time_limit)
+        if "ai_count" in data:
+            ai_count = data["ai_count"]
+        
+        if "ai_difficulties" in data:
+            ai_difficulties = data["ai_difficulties"]
+        
+        ai_names = data.get("ai_names", None)
+        
+        room = await self.room_manager.set_game_settings(
+            player_id, game_type, game_mode, barrier_density, map_size, time_limit,
+            ai_count, ai_difficulties, ai_names
+        )
         
         if room:
             await self.broadcast_to_room(room.code, {
@@ -383,12 +404,13 @@ class ConnectionManager:
         player_name = data.get("player_name", "Unknown")
         score = data.get("score", 0)
         game_type = data.get("game_type", "snake_classic")
+        game_mode = data.get("game_mode", "single_player")
         
         if score <= 0:
             return
         
         leaderboard = get_leaderboard_manager()
-        rank = leaderboard.add_score(player_name, score, game_type)
+        rank = leaderboard.add_score(player_name, score, game_type, game_mode)
         
         await self.send_personal(websocket, {
             "type": "score_submitted",
