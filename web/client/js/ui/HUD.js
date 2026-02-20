@@ -33,6 +33,37 @@ export class HUD {
         this.multSpeedVal = document.getElementById('mult-speed-val');
         this.multBarrierRow = document.getElementById('mult-barrier');
         this.multBarrierVal = document.getElementById('mult-barrier-val');
+
+        // Dead-player "leave game" overlay
+        this.deadOverlay   = document.getElementById('dead-overlay');
+        this.btnLeaveGame  = document.getElementById('btn-leave-game');
+
+        // Duel series elements
+        this.duelSeriesBar  = document.getElementById('duel-series-bar');
+        this.duelP1Name     = document.getElementById('duel-p1-name');
+        this.duelP1Score    = document.getElementById('duel-p1-score');
+        this.duelP2Name     = document.getElementById('duel-p2-name');
+        this.duelP2Score    = document.getElementById('duel-p2-score');
+        this.duelRoundLabel = document.getElementById('duel-round-label');
+        this.roundOverOverlay = document.getElementById('round-over-overlay');
+    }
+
+    /** Show the "You're Out – Leave Game" overlay (survival, dead player). */
+    showDeadOverlay(onLeave) {
+        if (!this.deadOverlay) return;
+        this.deadOverlay.classList.remove('hidden');
+        if (this.btnLeaveGame && onLeave) {
+            // Replace to avoid duplicate listeners
+            const newBtn = this.btnLeaveGame.cloneNode(true);
+            this.btnLeaveGame.replaceWith(newBtn);
+            this.btnLeaveGame = newBtn;
+            this.btnLeaveGame.addEventListener('click', onLeave, { once: true });
+        }
+    }
+
+    /** Hide the dead-player overlay. */
+    hideDeadOverlay() {
+        if (this.deadOverlay) this.deadOverlay.classList.add('hidden');
     }
     
     /**
@@ -40,7 +71,7 @@ export class HUD {
      */
     updateTimer(elapsedTime, timeLimit = null, mode = 'survival') {
         let displayTime;
-        const isTimedMode = (mode === 'high_score' || mode === 'battle_royale') && timeLimit;
+        const isTimedMode = (mode === 'high_score' || mode === 'battle_royale' || mode === 'duel') && timeLimit;
         
         if (isTimedMode) {
             // Count down for high score and battle royale modes
@@ -62,8 +93,9 @@ export class HUD {
             // Green tint for single player practice
             this.timer.style.color = '#22C55E';
         } else if (mode === 'battle_royale') {
-            // Purple tint for battle royale
             this.timer.style.color = '#A855F7';
+        } else if (mode === 'duel') {
+            this.timer.style.color = '#F97316';
         } else {
             this.timer.style.color = '';
         }
@@ -176,11 +208,10 @@ export class HUD {
     /**
      * Show game over screen
      */
-    showGameOver(winnerId, players, mode) {
-        // Sort by rank or score
+    showGameOver(winnerId, players, mode, seriesScores = null) {
         const sorted = Object.values(players).sort((a, b) => {
-            if (mode === 'survival') {
-                return a.rank - b.rank;
+            if (mode === 'survival' || mode === 'duel') {
+                return (a.rank || 99) - (b.rank || 99);
             } else {
                 const scoreA = a.snake ? a.snake.score : 0;
                 const scoreB = b.snake ? b.snake.score : 0;
@@ -188,33 +219,30 @@ export class HUD {
             }
         });
         
-        // Find winner name
         const winner = sorted.find(p => p.id === winnerId);
         const winnerName = winner ? winner.name : 'Unknown';
         
-        this.gameOverTitle.textContent = `${winnerName} Wins!`;
-        
-        // Build scores
-        this.finalScores.innerHTML = '';
-        
-        sorted.forEach((player, index) => {
-            const row = document.createElement('div');
-            row.className = 'final-score-row';
-            if (player.id === winnerId) {
-                row.classList.add('winner');
-            }
-            
-            const rank = mode === 'survival' ? player.rank : index + 1;
-            const score = player.snake ? player.snake.score : 0;
-            
-            row.innerHTML = `
-                <span class="rank">#${rank}</span>
-                <span class="final-name">${player.name}</span>
-                <span class="final-score">${score}</span>
-            `;
-            
-            this.finalScores.appendChild(row);
-        });
+        if (mode === 'duel' && seriesScores && Object.keys(seriesScores).length) {
+            const parts = sorted.map(p => `${p.name} ${seriesScores[p.id] || 0}`).join(' – ');
+            this.gameOverTitle.textContent = `${winnerName} Wins!`;
+            this.finalScores.innerHTML = `<div class="duel-final-series">${parts}</div>`;
+        } else {
+            this.gameOverTitle.textContent = `${winnerName} Wins!`;
+            this.finalScores.innerHTML = '';
+            sorted.forEach((player, index) => {
+                const row = document.createElement('div');
+                row.className = 'final-score-row';
+                if (player.id === winnerId) row.classList.add('winner');
+                const rank = (mode === 'survival' || mode === 'duel') ? player.rank : index + 1;
+                const score = player.snake ? player.snake.score : 0;
+                row.innerHTML = `
+                    <span class="rank">#${rank}</span>
+                    <span class="final-name">${player.name}</span>
+                    <span class="final-score">${score}</span>
+                `;
+                this.finalScores.appendChild(row);
+            });
+        }
         
         this.gameOverOverlay.classList.remove('hidden');
     }
@@ -275,6 +303,69 @@ export class HUD {
         if (this.multSpeedRow) this.multSpeedRow.classList.add('hidden');
     }
 
+    /** Update the duel series banner at the top of the game screen. */
+    updateDuelSeriesBar(players, seriesScores, currentRound, seriesLength) {
+        if (!this.duelSeriesBar) return;
+        const pids = Object.keys(players);
+        if (pids.length < 2) return;
+        this.duelSeriesBar.classList.remove('hidden');
+        const [p1, p2] = [players[pids[0]], players[pids[1]]];
+        this.duelP1Name.textContent = p1.name;
+        this.duelP2Name.textContent = p2.name;
+        this.duelP1Score.textContent = seriesScores[pids[0]] || 0;
+        this.duelP2Score.textContent = seriesScores[pids[1]] || 0;
+        const totalRounds = seriesLength || 3;
+        this.duelRoundLabel.textContent = `Round ${currentRound} of ${totalRounds}`;
+    }
+
+    /** Show the between-rounds overlay for duel mode. */
+    showRoundOver(data) {
+        if (!this.roundOverOverlay) return;
+        const titleEl = document.getElementById('round-over-title');
+        const winnerEl = document.getElementById('round-over-winner');
+        const seriesEl = document.getElementById('round-over-series');
+        const countdownEl = document.getElementById('round-over-countdown');
+
+        if (titleEl) titleEl.textContent = `Round ${data.round} Complete`;
+
+        // Find winner name
+        const players = data.final_state?.players || {};
+        const winner = data.winner_id != null ? players[data.winner_id] : null;
+        if (winnerEl) winnerEl.textContent = winner ? `${winner.name} wins the round!` : 'Draw!';
+
+        // Build series score display
+        if (seriesEl) {
+            const pids = Object.keys(data.series_scores || {});
+            const parts = pids.map(pid => {
+                const name = players[pid]?.name || `P${pid}`;
+                const wins = data.series_scores[pid] || 0;
+                return `<span class="round-series-player">${name}: ${wins}</span>`;
+            });
+            seriesEl.innerHTML = parts.join(' <span class="duel-dash">–</span> ');
+        }
+
+        this.roundOverOverlay.classList.remove('hidden');
+
+        // Countdown 5..1
+        let secs = 5;
+        if (countdownEl) countdownEl.textContent = `Next round in ${secs}...`;
+        const iv = setInterval(() => {
+            secs--;
+            if (secs <= 0) {
+                clearInterval(iv);
+                this.roundOverOverlay.classList.add('hidden');
+            } else if (countdownEl) {
+                countdownEl.textContent = `Next round in ${secs}...`;
+            }
+        }, 1000);
+    }
+
+    /** Hide duel series bar and round-over overlay. */
+    hideDuelUI() {
+        if (this.duelSeriesBar) this.duelSeriesBar.classList.add('hidden');
+        if (this.roundOverOverlay) this.roundOverOverlay.classList.add('hidden');
+    }
+
     /**
      * Reset HUD
      */
@@ -289,6 +380,8 @@ export class HUD {
         this.hideCountdown();
         this.hideGameOver();
         this.hideSurvivalPressure();
+        this.hideDeadOverlay();
+        this.hideDuelUI();
     }
     
     /**

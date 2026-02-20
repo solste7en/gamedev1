@@ -180,7 +180,7 @@ export class NetworkManager {
         return this.send({ type: 'ready', ready: ready });
     }
     
-    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null, timeLimit = null, aiCount = null, aiDifficulties = null, aiNames = null) {
+    setSettings(gameType, gameMode, barrierDensity = null, mapSize = null, timeLimit = null, aiCount = null, aiDifficulties = null, aiNames = null, seriesLength = null) {
         const data = {
             type: 'set_settings',
             game_type: gameType,
@@ -203,6 +203,9 @@ export class NetworkManager {
         }
         if (aiNames && Array.isArray(aiNames)) {
             data.ai_names = aiNames;
+        }
+        if (seriesLength !== null && seriesLength !== undefined) {
+            data.series_length = seriesLength;
         }
         return this.send(data);
     }

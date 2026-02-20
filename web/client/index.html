@@ -59,7 +59,11 @@
                     </button>
                 </div>
                 
+<<<<<<< Current (Your changes)
                 <div class="version-info">v0.4.0</div>
+=======
+                <div class="version-info">v0.5.0</div>
+>>>>>>> Incoming (Background Agent changes)
             </div>
         </div>
         
@@ -85,6 +89,7 @@
                         <option value="survival">Survival</option>
                         <option value="high_score">High Score</option>
                         <option value="battle_royale">Battle Royale</option>
+                        <option value="duel">Duel</option>
                         <option value="single_player">Solo Practice</option>
                     </select>
                     <button id="lb-unique-toggle" class="lb-score-toggle" data-unique="false">
@@ -139,6 +144,7 @@
                             <option value="survival" selected>Survival</option>
                             <option value="high_score">High Score</option>
                             <option value="battle_royale">Battle Royale</option>
+                            <option value="duel">Duel</option>
                         </select>
                     </div>
                     <div class="setting-row">
@@ -166,6 +172,14 @@
                             <option value="1m" selected>1 Minute</option>
                             <option value="2m">2 Minutes</option>
                             <option value="3m">3 Minutes</option>
+                        </select>
+                    </div>
+                    <div class="setting-row" id="series-length-row" style="display:none">
+                        <label>Series</label>
+                        <select id="select-series-length">
+                            <option value="3" selected>Best of 3</option>
+                            <option value="5">Best of 5</option>
+                            <option value="7">Best of 7</option>
                         </select>
                     </div>
                     <div class="setting-row ai-settings">
@@ -330,6 +344,15 @@
                     </div>
                 </div>
             </div>
+            <!-- Duel series score banner — persistent during duel games -->
+            <div id="duel-series-bar" class="duel-series-bar hidden">
+                <span id="duel-p1-name" class="duel-p-name"></span>
+                <span id="duel-p1-score" class="duel-score">0</span>
+                <span class="duel-dash">–</span>
+                <span id="duel-p2-score" class="duel-score">0</span>
+                <span id="duel-p2-name" class="duel-p-name"></span>
+                <span id="duel-round-label" class="duel-round">Round 1</span>
+            </div>
             <div id="game-hud">
                 <div id="timer" class="hud-element">0:00</div>
                 <div id="survival-pressure" class="hud-element hidden">
@@ -349,6 +372,24 @@
             </div>
             <div id="countdown-overlay" class="overlay hidden">
                 <span id="countdown-number">3</span>
+            </div>
+            <!-- Duel round-over intermission overlay -->
+            <div id="round-over-overlay" class="overlay hidden">
+                <div class="round-over-content">
+                    <h3 id="round-over-title">Round 1</h3>
+                    <p id="round-over-winner"></p>
+                    <div id="round-over-series" class="round-over-series"></div>
+                    <p id="round-over-countdown" class="round-countdown">Next round in 5...</p>
+                </div>
+            </div>
+            <!-- Shown to dead players in Survival while game is still running -->
+            <div id="dead-overlay" class="overlay hidden">
+                <div class="dead-overlay-content">
+                    <div class="dead-icon">💀</div>
+                    <h3>You're Out!</h3>
+                    <p>Watch the others or head back to the lobby.</p>
+                    <button id="btn-leave-game" class="btn btn-danger">Leave Game</button>
+                </div>
             </div>
             <div id="game-over-overlay" class="overlay hidden">
                 <div class="game-over-content">
@@ -393,6 +434,10 @@
                         <span class="stat-label" style="font-weight:600;color:var(--text-secondary)">Best Scores</span>
                     </div>
                     <div id="profile-best-scores"></div>
+                    <div class="profile-stat-row profile-stat-divider" id="duel-stats-header" style="display:none">
+                        <span class="stat-label" style="font-weight:600;color:var(--text-secondary)">Duel Record</span>
+                    </div>
+                    <div id="profile-duel-stats"></div>
                 </div>
 
                 <div id="profile-no-data" class="profile-no-data hidden">

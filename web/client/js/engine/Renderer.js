@@ -9,6 +9,7 @@ export class Renderer {
         this.gameContainer = null;
         this.effectsContainer = null;
         this.particles = [];
+        this._particlePool = [];  // Reusable Graphics objects
         
         // Grid settings
         this.cellSize = 20;
@@ -25,7 +26,7 @@ export class Renderer {
             width: width,
             height: height,
             backgroundColor: 0x0F172A,
-            antialias: true,
+            antialias: false,
             resolution: window.devicePixelRatio || 1,
             autoDensity: true
         });
@@ -308,13 +309,26 @@ export class Renderer {
     /**
      * Add particle effect
      */
+    _getPooledParticle(color, size) {
+        let particle = this._particlePool.pop();
+        if (particle) {
+            particle.clear();
+        } else {
+            particle = new PIXI.Graphics();
+        }
+        particle.beginFill(color);
+        particle.drawCircle(0, 0, size);
+        particle.endFill();
+        particle.alpha = 1;
+        particle.scale.set(1);
+        particle.visible = true;
+        return particle;
+    }
+
     addParticle(x, y, color, count = 10) {
         for (let i = 0; i < count; i++) {
-            const particle = new PIXI.Graphics();
             const size = 2 + Math.random() * 4;
-            particle.beginFill(color);
-            particle.drawCircle(0, 0, size);
-            particle.endFill();
+            const particle = this._getPooledParticle(color, size);
             
             particle.x = x;
             particle.y = y;
@@ -343,6 +357,13 @@ export class Renderer {
             if (p.life <= 0) {
                 this.effectsContainer.removeChild(p);
                 this.particles.splice(i, 1);
+                // Return to pool (cap pool size to prevent memory bloat)
+                if (this._particlePool.length < 200) {
+                    p.visible = false;
+                    this._particlePool.push(p);
+                } else {
+                    p.destroy();
+                }
             }
         }
     }
@@ -380,6 +401,8 @@ export class Renderer {
         this.gameContainer = null;
         this.effectsContainer = null;
         this.particles = [];
+        this._particlePool.forEach(p => p.destroy());
+        this._particlePool = [];
     }
 }
 

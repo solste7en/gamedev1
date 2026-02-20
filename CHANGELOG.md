@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-10
+
+### Added
+- **Duel mode**: new 1v1 competitive game mode with these features:
+  - Accelerated survival mechanics — reaches top speed in ~2 minutes, game ends at 2:30
+  - Best of 3, 5, or 7 series format with automatic round progression
+  - Hybrid tail decay + speed ramp (compressed intervals: 5s → 4s → 3s → 2.5s)
+  - Series score displayed at the top of the screen throughout the match
+  - Round-over intermission with 5-second countdown to next round
+  - "XXX wins!" announcement when series is decided
+  - Extra Large map option disabled for Duel mode
+- **Player profiles — Duel stats section**: tracks win/loss record against human players and each AI difficulty level, with winning percentage displayed (e.g., "3W / 5G (60%)")
+- **Smooth screen transitions**: all screen changes (menu ↔ lobby ↔ game) now use consistent fade animations for polished UX
+- **Automated game simulation script** (`test_duel_simulation.py`): runs 100+ games programmatically to identify bugs and validate game logic
+
+### Changed
+- Duel mode is now selectable even with default AI bots — selecting Duel automatically adjusts AI count to ensure exactly 2 total players
+- Series length selector (Best of 3/5/7) properly persists across room updates
+- Game mode change handler reordered to apply UI constraints before sending settings to server
+
+### Fixed
+- **Critical bug**: human players in non-Battle Royale modes now spawn in separate quadrants instead of all spawning at the same position
+- Duel mode enable/disable logic now only considers human player count (AI bots no longer incorrectly disable the mode)
+- Series length dropdown no longer reverts to "Best of 3" after selection
+
+### Technical
+- Server-side delta state broadcasting: `game_state` messages now exclude static fields (walls, quadrant_bounds) after initial sync, reducing network payload per tick
+- Client-side food graphics caching: skip expensive redraws when food visual state is unchanged between frames
+- Player quadrant assignment logic moved to `setup_game()` for consistency across all game modes
+
+---
+
 ## [0.4.0] - 2026-02-10
 
 ### Added
@@ -228,6 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[0.5.0]: https://github.com/username/project/releases/tag/v0.5.0
 [0.4.0]: https://github.com/username/project/releases/tag/v0.4.0
 [0.3.2]: https://github.com/username/project/releases/tag/v0.3.2
 [0.3.1]: https://github.com/username/project/releases/tag/v0.3.1

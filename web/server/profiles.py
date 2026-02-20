@@ -12,7 +12,9 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass, asdict, field
 
 
-MODES = ["survival", "high_score", "battle_royale", "single_player"]
+MODES = ["survival", "high_score", "battle_royale", "single_player", "duel"]
+
+AI_LEVELS = ["amateur", "semi_pro", "pro", "world_class"]
 
 
 @dataclass
@@ -29,6 +31,11 @@ class PlayerProfile:
     # AI-only subset
     games_vs_ai_only: int = 0
     wins_vs_ai_only: int = 0
+    # Duel-specific stats
+    duel_vs_human: Dict[str, int] = field(default_factory=lambda: {"games": 0, "wins": 0})
+    duel_vs_ai: Dict[str, Dict[str, int]] = field(
+        default_factory=lambda: {lvl: {"games": 0, "wins": 0} for lvl in AI_LEVELS}
+    )
 
     # ---- derived helpers (computed on the fly, not stored) ----
     def win_pct(self) -> float:
@@ -49,11 +56,14 @@ class PlayerProfile:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlayerProfile":
-        # Ensure all mode keys exist (forward-compat)
         for key in ("games_by_mode", "wins_by_mode", "highest_score_by_mode"):
             for m in MODES:
                 data.setdefault(key, {})[m] = data.get(key, {}).get(m, 0)
-        # Strip computed fields that are not stored
+        # Ensure duel sub-dicts exist
+        data.setdefault("duel_vs_human", {"games": 0, "wins": 0})
+        duel_ai = data.setdefault("duel_vs_ai", {})
+        for lvl in AI_LEVELS:
+            duel_ai.setdefault(lvl, {"games": 0, "wins": 0})
         for computed in ("win_pct", "win_pct_vs_humans", "games_vs_humans", "wins_vs_humans"):
             data.pop(computed, None)
         import dataclasses
@@ -154,6 +164,35 @@ class ProfileManager:
                 if is_winner:
                     p.wins_vs_ai_only += 1
 
+            self._save()
+
+    def record_duel(
+        self,
+        player_name: str,
+        is_winner: bool,
+        opponent_is_ai: bool,
+        opponent_ai_level: Optional[str] = None,
+    ):
+        """Record a duel series result (called once per series, not per round)."""
+        if not player_name:
+            return
+        with self._lock:
+            if player_name not in self._profiles:
+                self._profiles[player_name] = PlayerProfile(
+                    player_name=player_name,
+                    registered_at=datetime.now().strftime('%Y-%m-%d'),
+                )
+            p = self._profiles[player_name]
+            if opponent_is_ai and opponent_ai_level:
+                lvl = opponent_ai_level if opponent_ai_level in AI_LEVELS else "amateur"
+                p.duel_vs_ai.setdefault(lvl, {"games": 0, "wins": 0})
+                p.duel_vs_ai[lvl]["games"] += 1
+                if is_winner:
+                    p.duel_vs_ai[lvl]["wins"] += 1
+            else:
+                p.duel_vs_human["games"] += 1
+                if is_winner:
+                    p.duel_vs_human["wins"] += 1
             self._save()
 
     def reset_profile(self, player_name: str) -> bool:

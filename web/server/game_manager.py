@@ -70,9 +70,15 @@ class GameManager:
         )
         self.game_task: Optional[asyncio.Task] = None
         self.last_update = time.time()
-        
+
+        # Human players who voluntarily quit mid-game (survival mode).
+        # Their absence is factored into alive_count checks for AI-only detection.
+        self._mid_game_quit: Set[int] = set()
+
         # Cache for wall positions (built once, used many times per tick)
         self._wall_position_cache: Dict[int, Set[Tuple[int, int]]] = {}
+        # Per-tick shared blocked set for AI pathfinding (rebuilt each tick)
+        self._shared_blocked_cache: Dict[int, Set[Tuple[int, int]]] = {}
         
     def setup_game(self):
         """Initialize game state for all players"""
@@ -88,13 +94,15 @@ class GameManager:
             self.state.mode = GameMode.SINGLE_PLAYER
         is_single_player = self.state.mode == GameMode.SINGLE_PLAYER and ai_count == 0
         is_battle_royale = self.state.mode == GameMode.BATTLE_ROYALE
+        is_duel = self.state.mode == GameMode.DUEL
         
         # Get map size from room settings
         map_size_key = getattr(self.room, 'map_size', 'medium')
-        # Battle Royale: enforce minimum medium map, default to large
         if is_battle_royale:
             if map_size_key == 'small':
                 map_size_key = 'large'
+        if is_duel and map_size_key == 'extra_large':
+            map_size_key = 'large'
         map_config = MAP_SIZES.get(map_size_key, MAP_SIZES['medium'])
         self.state.map_size = map_size_key
         base_width = map_config['width']
@@ -146,9 +154,13 @@ class GameManager:
             player.state = PlayerState.PLAYING
             self.state.players[player_id] = player
             
-            # Battle Royale / single player: all players in quadrant 0
+            # Assign quadrant based on game mode
             if is_battle_royale or is_single_player:
+                # Battle Royale / single player: all players in quadrant 0
                 player.quadrant = 0
+            else:
+                # Other modes: assign each player to a unique quadrant
+                player.quadrant = self._get_next_quadrant(used_quadrants, total_players)
             
             used_quadrants.add(player.quadrant)
             self._setup_snake_for_player(player, player_index, is_battle_royale)
@@ -229,9 +241,25 @@ class GameManager:
             extra_food = random.randint(1, 2)  # Already spawned 2, add 1-2 more
             for _ in range(extra_food):
                 self._spawn_food(0)
+        elif self.state.mode == GameMode.DUEL:
+            # Duel: accelerated survival (2:30 limit, top speed in ~2 min)
+            self.state.time_limit = 150  # 2 minutes 30 seconds
+            self.state.survival_speed_increase_interval = 7.5
+            self.state.survival_speed_factor = 0.93
+            self.state.survival_speed_next_increase = 7.5
+            self.state.survival_decay_current_interval = 5.0
+            self.state.next_shrink_time = 20  # Shrink sooner in duel
+            self.state.shrink_interval = 20
+            # Series state
+            self.state.series_length = getattr(self.room, 'series_length', 3)
+            if not self.state.series_scores:
+                for pid in self.state.players:
+                    self.state.series_scores[pid] = 0
+            for player in self.state.players.values():
+                if player.snake:
+                    player.snake.decay_timer = 5.0
         elif self.state.mode == GameMode.SINGLE_PLAYER:
-            # Single player has no time limit, just practice
-            self.state.time_limit = 0  # No limit
+            self.state.time_limit = 0
     
     def _get_next_quadrant(self, used_quadrants: Set[int], total_players: int) -> int:
         """Get the next available quadrant for a player"""
@@ -769,15 +797,21 @@ class GameManager:
             self._update_high_score(dt)
         elif self.state.mode == GameMode.BATTLE_ROYALE:
             self._update_battle_royale(dt)
+        elif self.state.mode == GameMode.DUEL:
+            self._update_duel(dt)
         elif self.state.mode == GameMode.SINGLE_PLAYER:
             self._update_single_player(dt)
         
-        # Update AI players (skip if in spawn freeze)
+        # Build shared base blocked set once per tick for all AI players
+        self._shared_blocked_cache = {}  # quadrant -> set of (x, y)
+        
         current_time = time.time()
         for player in self.state.players.values():
             if player.is_ai and player.snake and player.snake.alive:
                 if player.snake.spawn_freeze <= 0:
                     self._update_ai_snake(player, current_time)
+        
+        self._shared_blocked_cache = {}
         
         # Move snakes (skip if in spawn freeze)
         for player in self.state.players.values():
@@ -895,6 +929,64 @@ class GameManager:
         if self.state.elapsed_time >= self.state.time_limit:
             self._end_game_high_score()  # Same end logic as high score mode
     
+    def _update_duel(self, dt: float):
+        """Update duel mode: accelerated survival mechanics with a time limit."""
+        # Speed ramp (accelerated: every 7.5s, factor 0.93)
+        if self.state.elapsed_time >= self.state.survival_speed_next_increase:
+            new_speed = self.state.current_speed * self.state.survival_speed_factor
+            self.state.current_speed = max(self.state.base_speed * 0.4, new_speed)
+            self.state.survival_speed_next_increase += self.state.survival_speed_increase_interval
+
+        # Arena shrink
+        if self.state.elapsed_time >= self.state.next_shrink_time:
+            self._shrink_arena()
+            self.state.next_shrink_time += self.state.shrink_interval
+
+        # Tail decay (compressed curve)
+        t = self.state.elapsed_time
+        if t < 20:
+            decay_interval = 5.0
+        elif t < 50:
+            decay_interval = 4.0
+        elif t < 90:
+            decay_interval = 3.0
+        else:
+            decay_interval = 2.5
+        self.state.survival_decay_current_interval = decay_interval
+        for player in self.state.players.values():
+            if player.snake and player.snake.alive:
+                player.snake.decay_timer -= dt
+                if player.snake.decay_timer <= 0:
+                    self._apply_tail_decay(player)
+                    if player.snake and player.snake.alive:
+                        player.snake.decay_timer = decay_interval
+
+        # Time limit: if reached, higher score wins
+        if self.state.elapsed_time >= self.state.time_limit:
+            self._end_duel_round()
+
+    def _end_duel_round(self):
+        """End the current duel round and determine the round winner."""
+        players_sorted = sorted(
+            self.state.players.values(),
+            key=lambda p: (p.snake.alive if p.snake else False, p.snake.score if p.snake else 0),
+            reverse=True
+        )
+        if len(players_sorted) >= 1:
+            round_winner = players_sorted[0]
+            round_winner.rank = 1
+            if len(players_sorted) >= 2:
+                players_sorted[1].rank = 2
+            # Track which player won this round in series_scores
+            self.state.series_scores[round_winner.id] = self.state.series_scores.get(round_winner.id, 0) + 1
+            # Check if the series is decided
+            wins_needed = (self.state.series_length // 2) + 1
+            if self.state.series_scores[round_winner.id] >= wins_needed:
+                self.state.series_winner_id = round_winner.id
+                self.state.winner_id = round_winner.id
+        self.state.game_over = True
+        self.state.running = False
+
     def _check_snake_collisions(self):
         """Check for snake-to-snake collisions in Battle Royale mode.
         If snake A's head collides with snake B's body, snake A dies.
@@ -1130,8 +1222,17 @@ class GameManager:
     def _check_win_conditions(self):
         """Check if game should end"""
         if self.state.mode == GameMode.SURVIVAL:
-            if self.state.alive_count <= 1:
-                # Find winner
+            # Normal end: only 1 (or 0) players still alive
+            normal_end = self.state.alive_count <= 1
+
+            # Early end: all humans quit — only AI remain in the game
+            humans_still_in_game = any(
+                not p.is_ai and p.id not in self._mid_game_quit
+                for p in self.state.players.values()
+            )
+            all_humans_gone = not humans_still_in_game
+
+            if normal_end or all_humans_gone:
                 for player in self.state.players.values():
                     if player.snake and player.snake.alive:
                         player.rank = 1
@@ -1140,16 +1241,18 @@ class GameManager:
                 self.state.game_over = True
                 self.state.running = False
         
+        elif self.state.mode == GameMode.DUEL:
+            # In duel, if one player dies the other wins the round
+            if self.state.alive_count <= 1:
+                self._end_duel_round()
+        
         elif self.state.mode == GameMode.SINGLE_PLAYER:
-            # Single player ends when snake dies
             if self.state.alive_count <= 0:
                 for player in self.state.players.values():
                     player.rank = 1
                     self.state.winner_id = player.id
                 self.state.game_over = True
                 self.state.running = False
-        
-        # High score mode ends by time limit (handled in _update_high_score)
     
     def _end_game_high_score(self):
         """End high score mode game"""
@@ -1193,16 +1296,24 @@ class GameManager:
     # ---- helpers ----
 
     def _ai_build_blocked(self, player: Player) -> Set[Tuple[int, int]]:
-        """All cells that would kill the snake on the next step."""
+        """All cells that would kill the snake on the next step.
+        Uses a shared per-quadrant cache for walls + all snake bodies to avoid
+        rebuilding the same set for every AI player on the same quadrant.
+        """
         quadrant = player.quadrant
-        blocked = set(self._get_wall_positions(quadrant))
-        for pos in player.snake.body[:-1]:
-            blocked.add((pos.x, pos.y))
-        for other in self.state.players.values():
-            if other.id != player.id and other.quadrant == quadrant:
-                if other.snake and other.snake.alive:
-                    for pos in other.snake.body:
-                        blocked.add((pos.x, pos.y))
+        if quadrant not in self._shared_blocked_cache:
+            base = set(self._get_wall_positions(quadrant))
+            for p in self.state.players.values():
+                if p.quadrant == quadrant and p.snake and p.snake.alive:
+                    for pos in p.snake.body:
+                        base.add((pos.x, pos.y))
+            self._shared_blocked_cache[quadrant] = base
+        # Clone the shared set and remove this snake's own tail tip (it will move)
+        blocked = set(self._shared_blocked_cache[quadrant])
+        # The tail tip of our own snake will move away, so it's not actually blocked
+        if player.snake.body:
+            tail = player.snake.body[-1]
+            blocked.discard((tail.x, tail.y))
         return blocked
 
     def _ai_safe_dirs(self, player: Player, bounds: QuadrantBounds,
@@ -1442,56 +1553,104 @@ class GameManager:
 
         return max(safe_dirs, key=lambda d: scores[d])
     
+    def _setup_next_duel_round(self):
+        """Reset game state for the next duel round while preserving series scores."""
+        saved_scores = dict(self.state.series_scores)
+        saved_round = self.state.current_round + 1
+        saved_series = self.state.series_length
+
+        # Reset room player state for next round
+        self.room.reset_for_next_round()
+
+        # Re-create game state, keeping mode and room settings
+        self.state = GameState(
+            game_type=self.room.game_type,
+            mode=GameMode.DUEL,
+            barrier_density=getattr(self.room, 'barrier_density', 'none')
+        )
+        self._wall_position_cache = {}
+        self._mid_game_quit = set()
+
+        self.setup_game()
+
+        # Restore series tracking
+        self.state.series_scores = saved_scores
+        self.state.current_round = saved_round
+        self.state.series_length = saved_series
+        # Ensure any new player IDs are also tracked
+        for pid in self.state.players:
+            if pid not in self.state.series_scores:
+                self.state.series_scores[pid] = 0
+
     async def run_game_loop(self):
         """Main game loop — setup_game() must be called before this."""
-        # Send initial state to all clients
         await self.broadcast({
             "type": "game_start",
             "state": self.state.to_dict()
         })
         
-        tick_rate = 1 / 30  # 30 FPS for updates (reduced from 60 for performance)
-        move_accumulator = 0
+        tick_rate = 1 / 30
         
-        while self.state.running and not self.state.game_over:
-            loop_start = time.time()
+        while True:
+            move_accumulator = 0
             
-            # Accumulate time for snake movement
-            move_accumulator += tick_rate * 1000  # Convert to ms
+            while self.state.running and not self.state.game_over:
+                loop_start = time.time()
+                
+                move_accumulator += tick_rate * 1000
+                while move_accumulator >= self.state.current_speed:
+                    self.update(self.state.current_speed / 1000)
+                    move_accumulator -= self.state.current_speed
+                
+                await self.broadcast({
+                    "type": "game_state",
+                    "state": self.state.to_dict_delta()
+                })
+                
+                if self.state.mode in [GameMode.HIGH_SCORE, GameMode.BATTLE_ROYALE]:
+                    for player in self.state.players.values():
+                        if player.state == PlayerState.DEAD and player.death_time:
+                            if time.time() - player.death_time >= player.respawn_delay:
+                                self._respawn_snake(player)
+                
+                elapsed = time.time() - loop_start
+                if elapsed < tick_rate:
+                    await asyncio.sleep(tick_rate - elapsed)
             
-            # Move snakes at game speed
-            while move_accumulator >= self.state.current_speed:
-                self.update(self.state.current_speed / 1000)  # Convert to seconds
-                move_accumulator -= self.state.current_speed
-            
-            # Broadcast state
-            await self.broadcast({
-                "type": "game_state",
-                "state": self.state.to_dict()
-            })
-            
-            # Handle respawns in high score and battle royale modes
-            if self.state.mode in [GameMode.HIGH_SCORE, GameMode.BATTLE_ROYALE]:
-                for player in self.state.players.values():
-                    if player.state == PlayerState.DEAD and player.death_time:
-                        if time.time() - player.death_time >= player.respawn_delay:
-                            self._respawn_snake(player)
-            
-            # Sleep to maintain tick rate
-            elapsed = time.time() - loop_start
-            if elapsed < tick_rate:
-                await asyncio.sleep(tick_rate - elapsed)
+            # ----- Round/game ended -----
+            # For DUEL series: if no series winner yet, broadcast round_over and start next round
+            if (self.state.mode == GameMode.DUEL
+                    and self.state.series_length > 0
+                    and self.state.series_winner_id is None):
+                await self.broadcast({
+                    "type": "round_over",
+                    "round": self.state.current_round,
+                    "winner_id": self.state.winner_id,
+                    "series_scores": self.state.series_scores,
+                    "series_length": self.state.series_length,
+                    "final_state": self.state.to_dict()
+                })
+                # 5-second intermission
+                await asyncio.sleep(5)
+                # Setup next round
+                self._setup_next_duel_round()
+                await self.broadcast({
+                    "type": "game_start",
+                    "state": self.state.to_dict()
+                })
+                # Brief countdown pause so clients see the new map
+                await asyncio.sleep(1)
+                continue  # Re-enter the inner game loop
+            else:
+                break  # Series decided or non-duel mode — exit
         
         # Record profile stats for every human player
         try:
             profile_mgr = get_profile_manager()
             human_players = [p for p in self.state.players.values() if not p.is_ai]
-            vs_ai_only = all(p.is_ai for p in self.state.players.values()
-                             if p.id not in [hp.id for hp in human_players])
             for player in human_players:
                 score = player.snake.score if player.snake else 0
                 is_winner = (player.id == self.state.winner_id)
-                # vs_ai_only = true when all OTHER players are AI
                 others_are_all_ai = all(
                     p.is_ai for p in self.state.players.values() if p.id != player.id
                 )
@@ -1502,16 +1661,47 @@ class GameManager:
                     game_mode=self.state.mode.value,
                     vs_ai_only=others_are_all_ai,
                 )
+                # Duel-specific: record opponent info for duel profile section
+                if self.state.mode == GameMode.DUEL:
+                    opponent = next(
+                        (p for p in self.state.players.values() if p.id != player.id), None
+                    )
+                    if opponent:
+                        profile_mgr.record_duel(
+                            player_name=player.name,
+                            is_winner=is_winner,
+                            opponent_is_ai=opponent.is_ai,
+                            opponent_ai_level=opponent.ai_difficulty if opponent.is_ai else None,
+                        )
         except Exception:
-            pass  # Never let profile recording crash the game loop
+            pass
 
-        # Send game over
+        # Send game over (or series_over for duel)
         await self.broadcast({
             "type": "game_over",
             "winner_id": self.state.winner_id,
+            "series_scores": self.state.series_scores if self.state.mode == GameMode.DUEL else {},
+            "series_length": self.state.series_length,
             "final_state": self.state.to_dict()
         })
     
+    def player_quit_game(self, player_id: int):
+        """
+        A human player leaves the running game (e.g. dead in Survival and chose to quit).
+        Marks them as quit so they are excluded from the 'only-AI-alive' check.
+        Returns True if the game should end immediately (no humans left in game).
+        """
+        self._mid_game_quit.add(player_id)
+
+        # Count humans still alive OR waiting to respawn who haven't quit
+        active_humans = [
+            p for p in self.state.players.values()
+            if not p.is_ai
+            and p.id not in self._mid_game_quit
+        ]
+        # If no human players remain, the game should end
+        return len(active_humans) == 0
+
     def start(self):
         """Start the game loop"""
         self.game_task = asyncio.create_task(self.run_game_loop())

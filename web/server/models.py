@@ -13,8 +13,9 @@ import math
 class GameMode(Enum):
     SURVIVAL = "survival"
     HIGH_SCORE = "high_score"
-    SINGLE_PLAYER = "single_player"  # Single player practice mode
-    BATTLE_ROYALE = "battle_royale"  # Shared map, PvP, timed high-score
+    SINGLE_PLAYER = "single_player"
+    BATTLE_ROYALE = "battle_royale"
+    DUEL = "duel"
 
 
 class GameType(Enum):
@@ -345,6 +346,12 @@ class GameState:
     
     # Stats
     alive_count: int = 0
+
+    # Duel series tracking
+    series_length: int = 0          # 0 = no series; 3/5/7
+    series_scores: Dict[int, int] = field(default_factory=dict)  # player_id -> rounds won
+    current_round: int = 1
+    series_winner_id: Optional[int] = None
     
     def to_dict(self):
         return {
@@ -368,7 +375,33 @@ class GameState:
             "alive_count": self.alive_count,
             "single_player_high_score": self.single_player_high_score,
             "survival_decay_current_interval": self.survival_decay_current_interval,
-            "survival_speed_next_increase": self.survival_speed_next_increase
+            "survival_speed_next_increase": self.survival_speed_next_increase,
+            "series_length": self.series_length,
+            "series_scores": self.series_scores,
+            "current_round": self.current_round,
+            "series_winner_id": self.series_winner_id,
+        }
+
+    def to_dict_delta(self):
+        """Lightweight state dict excluding static fields (walls, quadrant_bounds).
+        Clients merge this with the initial full state received at game_start."""
+        return {
+            "running": self.running,
+            "paused": self.paused,
+            "game_over": self.game_over,
+            "winner_id": self.winner_id,
+            "elapsed_time": self.elapsed_time,
+            "time_limit": self.time_limit,
+            "current_speed": self.current_speed,
+            "players": {pid: p.to_dict() for pid, p in self.players.items()},
+            "foods": {q: [f.to_dict() for f in foods] for q, foods in self.foods.items()},
+            "alive_count": self.alive_count,
+            "survival_decay_current_interval": self.survival_decay_current_interval,
+            "survival_speed_next_increase": self.survival_speed_next_increase,
+            "series_length": self.series_length,
+            "series_scores": self.series_scores,
+            "current_round": self.current_round,
+            "series_winner_id": self.series_winner_id,
         }
 
 

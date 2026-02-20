@@ -2,11 +2,11 @@
 
 A browser-based gaming platform featuring Snake and Brawler games, playable solo or with others on the same local network — no installation required for players.
 
-**Current Version: 0.4.0**
+**Current Version: 0.5.0**
 
 ## Games
 
-- **Snake** — Multi-player snake with AI bots, Survival / High Score / Battle Royale modes, animal-hunting mechanics, and a persistent leaderboard
+- **Snake** — Multi-player snake with AI bots, Survival / High Score / Battle Royale / Duel modes, animal-hunting mechanics, player profiles, and a persistent leaderboard
 - **Brawler** — 2v2 Brawl Ball-style arena game *(in development)*
 
 ---
@@ -37,7 +37,7 @@ The server will print:
 
 ```
 ============================================================
-  🐍 Snake Multiplayer Server v0.4.0
+  🐍 Snake Multiplayer Server v0.5.0
 ============================================================
 
   Local URL:    http://localhost:8000
@@ -84,6 +84,7 @@ Any device on the same Wi-Fi network can join a game without installing anything
 | **Survival** | Last snake alive wins. Hunger decay + speed ramp creates escalating pressure |
 | **High Score** | Score the most points before time runs out. Fibonacci respawn penalty on death |
 | **Battle Royale** | All players share one map (up to 6). Only kill shots score. Half-length respawn |
+| **Duel** | 1v1 showdown with accelerated survival mechanics. Best of 3/5/7 series. Reaches top speed in 2 minutes |
 
 ## Snake — Scoring System
 
@@ -103,10 +104,10 @@ Any device on the same Wi-Fi network can join a game without installing anything
 |-----|--------|
 | Arrow keys or WASD | Move snake |
 
-### Brawler
+### ~~Brawler~~ *(in development)*
 | Key | Action |
 |-----|--------|
-| WASD | Move |
-| Mouse | Aim |
-| Left-click | Attack |
-| E / Right-click | Ability |
+| ~~WASD~~ | ~~Move~~ |
+| ~~Mouse~~ | ~~Aim~~ |
+| ~~Left-click~~ | ~~Attack~~ |
+| ~~E / Right-click~~ | ~~Ability~~ |

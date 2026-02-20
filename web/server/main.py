@@ -20,7 +20,7 @@ from .websocket import connection_manager
 from .profiles import get_profile_manager
 
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 app = FastAPI(title="Snake Multiplayer Server", version=VERSION)
 

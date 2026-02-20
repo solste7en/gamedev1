@@ -14,6 +14,24 @@ import { SnakeGame } from './game/SnakeGame.js';
 import { Snake3DGame } from './game/Snake3DGame.js';
 import { BrawlerGame } from './game/BrawlerGame.js';
 
+/** Smoothly transition from one .screen element to another using opacity fade. */
+function transitionScreen(fromEl, toEl, duration = 180) {
+    if (fromEl && fromEl !== toEl) {
+        fromEl.classList.add('fading-out');
+        setTimeout(() => {
+            fromEl.classList.remove('active', 'fading-out');
+            fromEl.classList.add('hidden');
+        }, duration);
+    }
+    if (toEl) {
+        toEl.classList.remove('hidden');
+        toEl.classList.add('active');
+        // Force reflow then trigger opacity transition
+        toEl.offsetHeight;  // eslint-disable-line no-unused-expressions
+        toEl.style.opacity = '1';
+    }
+}
+
 class App {
     constructor() {
         this.network = new NetworkManager();
@@ -40,7 +58,7 @@ class App {
      * Initialize the application
      */
     async init() {
-        console.log('Game Hub v0.4.0');
+        console.log('Game Hub v0.5.0');
 
         // Initialize UI components
         this.menu = new Menu(this.network);
@@ -162,6 +180,11 @@ class App {
         
         this.network.on('room_reset', (data) => {
             this.currentRoom = data.room;
+            // If received while in-game (mid-game quit via leave_game), return to lobby
+            if (this.currentScreen === 'game') {
+                this.hideGame();
+                this.showLobby(false);
+            }
             if (this.currentRoom?.game_type === 'brawler') {
                 this.brawlerLobby.updateRoom(data.room);
             } else {
@@ -229,7 +252,13 @@ class App {
         
         this.network.on('game_start', (data) => {
             if (this.game) {
+                // During duel series, a new game_start signals the next round
+                if (this.game._deadOverlayShown !== undefined) {
+                    this.game._deadOverlayShown = false;
+                }
+                this.hud.hideDeadOverlay();
                 this.game.updateState(data.state);
+                if (!this.game.running) this.game.start();
             }
         });
         
@@ -246,16 +275,21 @@ class App {
             this.sound.play('death');
         });
         
+        // Duel round-over (between rounds, series not yet decided)
+        this.network.on('round_over', (data) => {
+            if (this.currentScreen !== 'game') return;
+            this.hud.showRoundOver(data);
+        });
+
         this.network.on('game_over', (data) => {
+            if (this.currentScreen !== 'game') return;
             if (this.game) {
-                this.game.onGameOver(data.winner_id, data.final_state);
+                this.game.onGameOver(data.winner_id, data.final_state, data.series_scores || null);
             }
-            // Play win sound if we won
             if (data.winner_id === this.playerId) {
                 this.sound.play('win');
             }
             
-            // Submit score to leaderboard for all Snake game modes
             if (this.currentRoom && this.currentRoom.game_type !== 'brawler') {
                 const playerState = data.final_state?.players?.[this.playerId];
                 if (playerState && playerState.snake && playerState.snake.score > 0) {
@@ -308,16 +342,22 @@ class App {
      * @param {boolean} isNewRoom - True if this is a newly created/joined room
      */
     showLobby(isNewRoom = true) {
-        this.menu.hide();
-        this.hideGame();
+        const fromScreen = document.querySelector('.screen.active:not(.hidden)');
+        const lobbyScreen = document.getElementById('lobby-screen');
+        const brawlerLobbyScreen = document.getElementById('brawler-lobby-screen');
 
-        // Show appropriate lobby based on game type
+        if (this.currentScreen === 'game') {
+            this.hideGame();
+        }
+
         if (this.currentRoom?.game_type === 'brawler') {
             this.lobby.hide();
+            transitionScreen(fromScreen, brawlerLobbyScreen);
             this.brawlerLobby.show(this.currentRoom, this.playerId);
             this.currentScreen = 'brawler-lobby';
         } else {
             this.brawlerLobby.hide();
+            transitionScreen(fromScreen, lobbyScreen);
             this.lobby.show(this.currentRoom, this.playerId, isNewRoom);
             this.currentScreen = 'lobby';
         }
@@ -327,9 +367,12 @@ class App {
      * Show menu screen
      */
     showMenu() {
+        const fromScreen = document.querySelector('.screen.active:not(.hidden)');
         this.lobby.hide();
         this.brawlerLobby.hide();
         this.hideGame();
+        const menuScreen = document.getElementById('menu-screen');
+        transitionScreen(fromScreen, menuScreen);
         this.menu.show();
         this.currentScreen = 'menu';
     }
@@ -338,18 +381,15 @@ class App {
      * Start the game
      */
     async startGame() {
-        // Reset HUD state (clears survival pressure, speed indicator, etc. from previous game)
         this.hud.reset();
-        
+
+        const fromScreen = document.querySelector('.screen.active:not(.hidden)');
         this.lobby.hide();
         this.menu.hide();
-        
-        // Show game screen
+
         const gameScreen = document.getElementById('game-screen');
-        gameScreen.classList.remove('hidden');
-        gameScreen.classList.add('active');
-        
-        // Show animal legend for snake games
+        transitionScreen(fromScreen, gameScreen);
+
         const animalLegend = document.getElementById('animal-legend');
         if (animalLegend) {
             animalLegend.classList.remove('hidden');
@@ -377,23 +417,31 @@ class App {
         } else {
             this.game = new SnakeGame(this.renderer, this.input, this.network, this.hud, this.sound);
         }
+
+        // Allow player to quit mid-game (Survival mode, after dying)
+        if (this.game.onLeaveGame !== undefined) {
+            this.game.onLeaveGame = () => {
+                this.network.send({ type: 'leave_game' });
+                // room_reset response will trigger hideGame + showLobby
+            };
+        }
         
         await this.game.init(this.playerId);
+
+        this.currentScreen = 'game';
     }
     
     /**
      * Start the brawler game
      */
     async startBrawlerGame() {
+        const fromScreen = document.querySelector('.screen.active:not(.hidden)');
         this.brawlerLobby.hide();
         this.menu.hide();
-        
-        // Show game screen
+
         const gameScreen = document.getElementById('game-screen');
-        gameScreen.classList.remove('hidden');
-        gameScreen.classList.add('active');
-        
-        // Hide animal legend for brawler games
+        transitionScreen(fromScreen, gameScreen);
+
         const animalLegend = document.getElementById('animal-legend');
         if (animalLegend) {
             animalLegend.classList.add('hidden');
@@ -627,6 +675,7 @@ class App {
             high_score: 'High Score',
             battle_royale: 'Battle Royale',
             single_player: 'Solo Practice',
+            duel: 'Duel',
         };
         const modeStats = document.getElementById('profile-mode-stats');
         modeStats.innerHTML = '';
@@ -656,6 +705,32 @@ class App {
                 <span class="profile-mode-val" style="color:#F59E0B;font-weight:600">${best.toLocaleString()}</span>
             `;
             bestScores.appendChild(row);
+        }
+
+        // Duel stats
+        const duelStatsEl = document.getElementById('profile-duel-stats');
+        const duelHeader = document.getElementById('duel-stats-header');
+        if (duelStatsEl) {
+            duelStatsEl.innerHTML = '';
+            const dvh = profile.duel_vs_human || { games: 0, wins: 0 };
+            const dva = profile.duel_vs_ai || {};
+            const hasDuelData = dvh.games > 0 || Object.values(dva).some(v => v.games > 0);
+            if (duelHeader) duelHeader.style.display = hasDuelData ? '' : 'none';
+            if (hasDuelData) {
+                const addRow = (label, g, w) => {
+                    const pct = g > 0 ? Math.round((w / g) * 100) : 0;
+                    const row = document.createElement('div');
+                    row.className = 'profile-mode-row';
+                    row.innerHTML = `<span class="profile-mode-label">${label}</span><span class="profile-mode-val">${w}W / ${g}G (${pct}%)</span>`;
+                    duelStatsEl.appendChild(row);
+                };
+                if (dvh.games > 0) addRow('vs Human', dvh.games, dvh.wins);
+                const aiLabels = { amateur: 'vs Amateur AI', semi_pro: 'vs Semi-Pro AI', pro: 'vs Pro AI', world_class: 'vs World-Class AI' };
+                for (const [lvl, lbl] of Object.entries(aiLabels)) {
+                    const d = dva[lvl] || { games: 0, wins: 0 };
+                    if (d.games > 0) addRow(lbl, d.games, d.wins);
+                }
+            }
         }
 
         document.getElementById('profile-registered-date').textContent =

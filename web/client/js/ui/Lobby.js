@@ -71,6 +71,8 @@ export class Lobby {
         this.selectTimeLimit = document.getElementById('select-time-limit');
         this.timeLimitRow = document.getElementById('time-limit-row');
         this.selectAICount = document.getElementById('select-ai-count');
+        this.selectSeriesLength = document.getElementById('select-series-length');
+        this.seriesLengthRow = document.getElementById('series-length-row');
         
         this.btnReady = document.getElementById('btn-ready');
         this.btnStartGame = document.getElementById('btn-start-game');
@@ -96,8 +98,9 @@ export class Lobby {
         });
         
         this.selectGameMode.addEventListener('change', () => {
-            this.updateSettings();
+            // Update UI constraints (like AI count) BEFORE sending settings to server
             this.updateTimeLimitVisibility(true);  // modeJustChanged = true
+            this.updateSettings();
         });
         this.selectBarrierDensity.addEventListener('change', () => this.updateSettings());
         this.selectMapSize.addEventListener('change', () => this.updateSettings());
@@ -108,6 +111,8 @@ export class Lobby {
             this.updateSettings();
             this.updatePlayerList();
         });
+        
+        this.selectSeriesLength?.addEventListener('change', () => this.updateSettings());
     }
     
     /**
@@ -193,6 +198,9 @@ export class Lobby {
         this.selectBarrierDensity.value = this.room.barrier_density || 'none';
         this.selectMapSize.value = this.room.map_size || 'medium';
         this.selectTimeLimit.value = this.room.time_limit || '1m';
+        if (this.selectSeriesLength && this.room.series_length) {
+            this.selectSeriesLength.value = String(this.room.series_length);
+        }
         this.updateTimeLimitVisibility();
     }
     
@@ -436,6 +444,11 @@ export class Lobby {
                 this.selectAICount.value = (this.room.ai_count || 0).toString();
             }
             
+            // Sync series length for duel mode
+            if (this.selectSeriesLength && this.room.series_length) {
+                this.selectSeriesLength.value = String(this.room.series_length);
+            }
+            
             // Sync aiConfigs from room state
             this.syncAIConfigs(this.room.ai_difficulties || [], this.room.ai_names || []);
             
@@ -448,11 +461,15 @@ export class Lobby {
      * @param {boolean} modeJustChanged - pass true when the user actually changed the mode dropdown
      */
     updateTimeLimitVisibility(modeJustChanged = false) {
-        // Show time limit for high_score and battle_royale modes
+        const mode = this.selectGameMode.value;
+        const isDuel = mode === 'duel';
         if (this.timeLimitRow) {
-            const mode = this.selectGameMode.value;
             this.timeLimitRow.style.display = 
                 (mode === 'high_score' || mode === 'battle_royale') ? 'flex' : 'none';
+        }
+        // Series length only visible for duel
+        if (this.seriesLengthRow) {
+            this.seriesLengthRow.style.display = isDuel ? 'flex' : 'none';
         }
         this.updateMapSizeOptions(modeJustChanged);
     }
@@ -465,41 +482,77 @@ export class Lobby {
         if (!this.selectMapSize) return;
         const mode = this.selectGameMode.value;
         const isBattleRoyale = mode === 'battle_royale';
+        const isDuel = mode === 'duel';
         
-        // Battle Royale: disable small map, default to large
+        // Map restrictions
         const smallOption = this.selectMapSize.querySelector('option[value="small"]');
+        const xlOption = this.selectMapSize.querySelector('option[value="extra_large"]');
         if (smallOption) {
             smallOption.disabled = isBattleRoyale;
             if (isBattleRoyale && this.selectMapSize.value === 'small') {
                 this.selectMapSize.value = 'large';
             }
         }
+        if (xlOption) {
+            xlOption.disabled = isDuel;
+            if (isDuel && this.selectMapSize.value === 'extra_large') {
+                this.selectMapSize.value = 'large';
+            }
+        }
         
-        // AI count limits: Battle Royale = 2–5 bots (min 3 players); others = 0–3 bots
+        // Duel mode: disable ONLY if there are more than 2 HUMAN players in room
+        // (AI bots can be adjusted down when duel is selected)
+        const duelOption = this.selectGameMode.querySelector('option[value="duel"]');
+        if (duelOption && this.room) {
+            const humanCount = this.room.players ? this.room.players.length : 0;
+            duelOption.disabled = humanCount > 2;
+        }
+        
+        // AI count limits
         if (this.selectAICount) {
             const allOptions = this.selectAICount.querySelectorAll('option');
+            const humanCount = this.room?.players?.length || 1;
             allOptions.forEach(opt => {
                 const val = parseInt(opt.value);
                 if (isBattleRoyale) {
-                    // Gray out 0 and 1 bot (need at least 2 for min-3-player requirement)
                     opt.disabled = val < 2;
-                    // Also disable 4/5 if already controlled by br-only class below
+                } else if (isDuel) {
+                    // In duel: total players = humanCount + AI must be <= 2
+                    // So max AI = 2 - humanCount
+                    const maxAI = Math.max(0, 2 - humanCount);
+                    opt.disabled = val > maxAI;
                 } else {
-                    // Other modes: disable 4 and 5 bot options (BR-only)
                     opt.disabled = val > 3;
                 }
             });
             
             const currentVal = parseInt(this.selectAICount.value);
-            if (!isBattleRoyale && currentVal > 3) {
+            if (isDuel) {
+                const maxAI = Math.max(0, 2 - (this.room?.players?.length || 1));
+                if (currentVal > maxAI) {
+                    this.selectAICount.value = String(maxAI);
+                    this.syncAIConfigs();
+                    this.updatePlayerList();
+                }
+            }
+            if (!isBattleRoyale && !isDuel && currentVal > 3) {
                 this.selectAICount.value = '3';
                 this.syncAIConfigs();
             }
-            // When switching TO Battle Royale, enforce minimum 2 bots
             if (isBattleRoyale && modeJustChanged && currentVal < 2) {
                 this.selectAICount.value = '2';
                 this.syncAIConfigs();
                 this.updatePlayerList();
+            }
+            // Duel mode: ensure we have exactly 2 total players (human + AI)
+            if (isDuel && modeJustChanged) {
+                const humanCount = this.room?.players?.length || 1;
+                const needed = 2 - humanCount;
+                if (needed > 0 && currentVal < needed) {
+                    this.selectAICount.value = String(needed);
+                    this.syncAIConfigs();
+                    this.updatePlayerList();
+                }
             }
         }
     }
@@ -595,6 +648,7 @@ export class Lobby {
         const aiCount = this.selectAICount ? parseInt(this.selectAICount.value) : 0;
         const aiDifficulties = this.getAIDifficulties();
         const aiNames = this.getAINames();
+        const seriesLength = this.selectSeriesLength ? parseInt(this.selectSeriesLength.value) : 3;
         
         this.network.setSettings(
             'snake_classic',
@@ -604,7 +658,8 @@ export class Lobby {
             this.selectTimeLimit.value,
             aiCount,
             aiDifficulties,
-            aiNames
+            aiNames,
+            seriesLength
         );
     }
     

@@ -4,10 +4,10 @@ WebSocket handlers for multiplayer game communication
 
 import json
 import asyncio
-from typing import Dict, Set, Optional
+from typing import Dict, Set, Optional, List
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .models import GameType, GameMode
+from .models import GameType, GameMode, PlayerState
 from .room_manager import RoomManager, Room
 from .game_manager import GameManager
 from .brawler_game_manager import BrawlerGameManager
@@ -50,17 +50,41 @@ class ConnectionManager:
             pass
     
     async def broadcast_to_room(self, room_code: str, message: dict):
-        """Broadcast message to all players in a room"""
+        """Broadcast message to all players in a room (parallel, pre-serialized)."""
         room = self.room_manager.get_room(room_code)
         if not room:
             return
-        
-        for player in room.players.values():
-            if player.websocket:
-                try:
-                    await player.websocket.send_json(message)
-                except Exception:
-                    pass
+        serialized = json.dumps(message)
+        sockets: List[WebSocket] = [
+            p.websocket for p in room.players.values() if p.websocket
+        ]
+        if not sockets:
+            return
+        async def _send(ws):
+            try:
+                await ws.send_text(serialized)
+            except Exception:
+                pass
+        await asyncio.gather(*(_send(ws) for ws in sockets))
+
+    async def broadcast_to_room_except(self, room_code: str, exclude_player_id: int, message: dict):
+        """Broadcast to room except one player (parallel, pre-serialized)."""
+        room = self.room_manager.get_room(room_code)
+        if not room:
+            return
+        serialized = json.dumps(message)
+        sockets: List[WebSocket] = [
+            p.websocket for p in room.players.values()
+            if p.id != exclude_player_id and p.websocket
+        ]
+        if not sockets:
+            return
+        async def _send(ws):
+            try:
+                await ws.send_text(serialized)
+            except Exception:
+                pass
+        await asyncio.gather(*(_send(ws) for ws in sockets))
     
     async def handle_message(self, websocket: WebSocket, player_id: int, data: dict) -> int:
         """Handle incoming WebSocket message. Returns updated player_id."""
@@ -96,6 +120,9 @@ class ConnectionManager:
         
         elif msg_type == "return_to_lobby":
             await self._handle_return_to_lobby(player_id)
+
+        elif msg_type == "leave_game":
+            await self._handle_leave_game(player_id, websocket)
         
         elif msg_type == "get_leaderboard":
             await self._handle_get_leaderboard(websocket)
@@ -257,10 +284,16 @@ class ConnectionManager:
             ai_difficulties = data["ai_difficulties"]
         
         ai_names = data.get("ai_names", None)
+        series_length = data.get("series_length", None)
+        if series_length is not None:
+            try:
+                series_length = int(series_length)
+            except (TypeError, ValueError):
+                series_length = None
         
         room = await self.room_manager.set_game_settings(
             player_id, game_type, game_mode, barrier_density, map_size, time_limit,
-            ai_count, ai_difficulties, ai_names
+            ai_count, ai_difficulties, ai_names, series_length=series_length
         )
         
         if room:
@@ -405,6 +438,46 @@ class ConnectionManager:
             "room": room.to_dict()
         })
     
+    async def _handle_leave_game(self, player_id: int, websocket: WebSocket):
+        """
+        A human player quits the running game (e.g. died in Survival) and returns to
+        the room lobby WITHOUT stopping the game for remaining players.
+        If all human players have now quit, the game ends automatically.
+        """
+        room = self.room_manager.get_player_room(player_id)
+        if not room:
+            return
+
+        # Mark player as quit in the game manager
+        if room.code in self.game_managers:
+            gm = self.game_managers[room.code]
+            all_gone = gm.player_quit_game(player_id)
+            if all_gone:
+                # Trigger immediate game end on next tick
+                gm.state.game_over = True
+                gm.state.running = False
+
+        # Reset only this player's per-game state so they can ready up again
+        player = room.players.get(player_id)
+        if player:
+            player.state = PlayerState.WAITING
+            player.snake = None
+            player.death_count = 0
+            player.respawn_delay = 2.0
+
+        # Send the quitting player back to the room lobby view
+        await self.send_personal(websocket, {
+            "type": "room_reset",
+            "room": room.to_dict()
+        })
+
+        # Notify other room members that this player went back to lobby
+        await self.broadcast_to_room_except(room.code, player_id, {
+            "type": "player_left_game",
+            "player_id": player_id,
+            "room": room.to_dict()
+        })
+
     async def _handle_get_leaderboard(self, websocket: WebSocket):
         """Get the leaderboard"""
         leaderboard = get_leaderboard_manager()

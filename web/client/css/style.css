@@ -73,12 +73,20 @@ body {
     margin: auto;
 }
 
+.screen {
+    transition: opacity 0.18s ease;
+}
 .screen.active {
     display: flex;
+    opacity: 1;
 }
-
 .screen.hidden {
     display: none;
+    opacity: 0;
+}
+.screen.fading-out {
+    opacity: 0;
+    pointer-events: none;
 }
 
 /* Game screen must never scroll */
@@ -754,12 +762,11 @@ body {
     scrollbar-color: var(--bg-light) transparent;
 }
 
-/* Animal legend sits on the right */
+/* Initial placement — overridden by JS after canvas size is known */
 #animal-legend {
     right: 16px;
 }
 
-/* Player sidebar sits on the left */
 #player-sidebar {
     left: 16px;
 }
@@ -938,6 +945,39 @@ body {
     50% { transform: scale(1.1); }
 }
 
+/* ---- Dead-player mid-game quit overlay ---- */
+#dead-overlay {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+}
+
+.dead-overlay-content {
+    text-align: center;
+    padding: 32px 48px;
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    max-width: 320px;
+}
+
+.dead-overlay-content .dead-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.dead-overlay-content h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.dead-overlay-content p {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+}
+
+/* ---- Game over content ---- */
 .game-over-content {
     text-align: center;
     padding: 40px;
@@ -1253,19 +1293,7 @@ body {
     50% { opacity: 0.7; }
 }
 
-/* Screen transitions */
-.screen {
-    transition: opacity 0.3s ease;
-}
-
-.screen.hidden {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.screen.active {
-    opacity: 1;
-}
+/* (screen transitions defined above in .screen/.screen.active/.screen.hidden) */
 
 /* Modal overlay animation */
 .modal {
@@ -2150,4 +2178,57 @@ select:focus-visible {
     background: var(--danger);
     border-color: var(--danger);
     color: #fff;
+}
+
+/* ---- Duel Series Banner ---- */
+.duel-series-bar {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    background: rgba(15, 23, 42, 0.85);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.duel-series-bar.hidden { display: none; }
+.duel-p-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+.duel-score { font-size: 22px; font-weight: 700; color: #F59E0B; }
+.duel-dash { color: var(--text-muted); font-size: 18px; }
+.duel-round { font-size: 11px; color: var(--text-muted); margin-left: 10px; }
+
+/* ---- Duel Round-Over Intermission Overlay ---- */
+#round-over-overlay {
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(3px);
+}
+.round-over-content {
+    text-align: center;
+    padding: 32px 48px;
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    border: 1px solid rgba(255,255,255,0.08);
+    max-width: 380px;
+}
+.round-over-content h3 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.round-over-content p { color: var(--text-muted); margin-bottom: 8px; font-size: 15px; }
+.round-over-series { font-size: 18px; font-weight: 600; margin: 12px 0; }
+.round-series-player { color: #F59E0B; }
+.round-countdown { color: var(--text-muted); font-size: 13px; margin-top: 12px; }
+
+/* ---- Duel Final Series Score ---- */
+.duel-final-series {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 12px 0;
+    letter-spacing: 1px;
 }

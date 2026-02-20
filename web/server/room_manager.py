@@ -34,9 +34,12 @@ class Room:
     game_started: bool = False
     
     # AI settings for Snake games
-    ai_count: int = 0  # Number of AI players to add
-    ai_difficulties: List[str] = field(default_factory=list)  # Per-AI difficulty levels
-    ai_names: List[str] = field(default_factory=list)  # Custom names for AI bots
+    ai_count: int = 0
+    ai_difficulties: List[str] = field(default_factory=list)
+    ai_names: List[str] = field(default_factory=list)
+
+    # Duel series
+    series_length: int = 3  # best-of-N (3/5/7), only used when game_mode == DUEL
     
     # Brawler-specific fields
     team_assignments: Dict[int, int] = field(default_factory=dict)  # player_id -> team (0=blue, 1=red)
@@ -98,12 +101,22 @@ class Room:
     def reset_for_rematch(self):
         """Reset room state for a new game (after game over)"""
         self.game_started = False
-        # Reset all players to WAITING state
         for player in self.players.values():
             player.state = PlayerState.WAITING
             player.snake = None
             player.rank = None
             player.death_time = None
+            player.death_count = 0
+            player.respawn_delay = 2.0
+
+    def reset_for_next_round(self):
+        """Reset player state for the next round in a duel series (keeps game_started True)."""
+        for player in self.players.values():
+            player.snake = None
+            player.rank = None
+            player.death_time = None
+            player.death_count = 0
+            player.respawn_delay = 2.0
     
     def to_dict(self):
         result = {
@@ -123,7 +136,8 @@ class Room:
             "game_started": self.game_started,
             "ai_count": self.ai_count,
             "ai_difficulties": self.ai_difficulties,
-            "ai_names": self.ai_names
+            "ai_names": self.ai_names,
+            "series_length": self.series_length,
         }
         
         # Add brawler-specific fields if it's a brawler game
@@ -162,8 +176,12 @@ class RoomManager:
             )
             self._next_player_id += 1
             
-            # Create room (Battle Royale allows 6 total slots)
-            max_players = 6 if game_mode == GameMode.BATTLE_ROYALE else 4
+            if game_mode == GameMode.BATTLE_ROYALE:
+                max_players = 6
+            elif game_mode == GameMode.DUEL:
+                max_players = 2
+            else:
+                max_players = 4
             room = Room(
                 code=code,
                 host_id=player.id,
@@ -260,7 +278,8 @@ class RoomManager:
                                  time_limit: Optional[str] = None,
                                  ai_count: Optional[int] = None,
                                  ai_difficulties: Optional[List[str]] = None,
-                                 ai_names: Optional[List[str]] = None) -> Optional[Room]:
+                                 ai_names: Optional[List[str]] = None,
+                                 series_length: Optional[int] = None) -> Optional[Room]:
         """Host can change game settings"""
         room = self.get_player_room(player_id)
         if room and room.host_id == player_id and not room.game_started:
@@ -268,9 +287,10 @@ class RoomManager:
                 room.game_type = game_type
             if game_mode:
                 room.game_mode = game_mode
-                # Adjust room capacity when mode changes
                 if game_mode == GameMode.BATTLE_ROYALE:
                     room.max_players = 6
+                elif game_mode == GameMode.DUEL:
+                    room.max_players = 2
                 else:
                     room.max_players = 4
             if barrier_density and barrier_density in ["none", "sparse", "moderate", "dense"]:
@@ -279,8 +299,11 @@ class RoomManager:
                 room.map_size = map_size
             if time_limit and time_limit in ["30s", "1m", "2m", "3m"]:
                 room.time_limit = time_limit
+            if series_length is not None and series_length in (3, 5, 7):
+                room.series_length = series_length
             is_battle_royale = room.game_mode == GameMode.BATTLE_ROYALE
-            max_ai = 5 if is_battle_royale else 3
+            is_duel = room.game_mode == GameMode.DUEL
+            max_ai = 5 if is_battle_royale else (1 if is_duel else 3)
             if ai_count is not None and 0 <= ai_count <= max_ai:
                 room.ai_count = ai_count
             if ai_difficulties is not None and isinstance(ai_difficulties, list):

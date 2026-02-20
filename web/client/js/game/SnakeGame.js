@@ -16,6 +16,11 @@ export class SnakeGame {
         this.prevState = null;  // For detecting changes
         this.playerId = null;
         this.running = false;
+
+        // Callback set by main.js to handle mid-game quit
+        this.onLeaveGame = null;
+        // Prevents showing the dead overlay more than once per game
+        this._deadOverlayShown = false;
         
         // Visual settings
         this.cellSize = 16;
@@ -101,7 +106,6 @@ export class SnakeGame {
         if (!this.gameState) return;
         
         // Derive layout from actual quadrant bounds, not from mode or player count.
-        // The server creates 2 quadrants even for single_player when AI bots are present.
         const numQuadrants = Object.keys(this.gameState.quadrant_bounds).length;
         
         let cols, rows;
@@ -126,12 +130,42 @@ export class SnakeGame {
         this.focusedLayout = false;
         this.focusPeek = 0;
 
-        // Always show all quadrants — labels render inside each quadrant's top area
         const width  = cols * quadrantWidth  * this.cellSize + this.padding * 2;
         const height = rows * quadrantHeight * this.cellSize + this.padding * 2 + 30;
         
         this.renderer.resize(width, height);
         this.renderer.setGrid(quadrantWidth * cols, quadrantHeight * rows, this.cellSize);
+
+        // Position the side panels immediately adjacent to the canvas so they stay
+        // in view even on small/narrow browser windows.
+        requestAnimationFrame(() => this._repositionSidePanels(width));
+    }
+
+    /**
+     * Position side panels flush against the canvas edges.
+     * Both panels are position:absolute relative to #game-wrapper (full viewport).
+     */
+    _repositionSidePanels(canvasWidth) {
+        const wrapper = document.getElementById('game-wrapper');
+        const sidebar = document.getElementById('player-sidebar');
+        const legend  = document.getElementById('animal-legend');
+        if (!wrapper || !sidebar || !legend) return;
+
+        const wrapperW = wrapper.clientWidth;
+        const canvasLeft  = Math.max(0, (wrapperW - canvasWidth) / 2);
+        const canvasRight = canvasLeft + canvasWidth;
+        const GAP = 10;
+        const PANEL_W = 180;
+
+        // Left panel: right-align to just left of canvas, min 4px from viewport edge
+        const sidebarLeft = Math.max(4, canvasLeft - PANEL_W - GAP);
+        sidebar.style.left  = sidebarLeft + 'px';
+        sidebar.style.right = 'auto';
+
+        // Right panel: left-align to just right of canvas
+        const legendLeft = Math.min(wrapperW - PANEL_W - 4, canvasRight + GAP);
+        legend.style.left  = legendLeft + 'px';
+        legend.style.right = 'auto';
     }
     
     /**
@@ -139,6 +173,7 @@ export class SnakeGame {
      */
     start() {
         this.running = true;
+        this._deadOverlayShown = false;
         this.hud.reset();
         // Note: graphics cache is intentionally NOT reset here.
         // The canvas is already pre-rendered during the countdown (via game_start/game_state events),
@@ -194,6 +229,19 @@ export class SnakeGame {
     updateState(state) {
         const firstUpdate = !this.gameState;
         this.prevState = this.gameState;
+
+        if (!firstUpdate && this.gameState) {
+            // Delta states omit static fields; carry them forward
+            if (!state.walls && this.gameState.walls) state.walls = this.gameState.walls;
+            if (!state.quadrant_bounds && this.gameState.quadrant_bounds) state.quadrant_bounds = this.gameState.quadrant_bounds;
+            if (!state.game_type && this.gameState.game_type) state.game_type = this.gameState.game_type;
+            if (!state.mode && this.gameState.mode) state.mode = this.gameState.mode;
+            if (!state.barrier_density && this.gameState.barrier_density) state.barrier_density = this.gameState.barrier_density;
+            if (!state.map_size && this.gameState.map_size) state.map_size = this.gameState.map_size;
+            if (state.grid_width == null) state.grid_width = this.gameState.grid_width;
+            if (state.grid_height == null) state.grid_height = this.gameState.grid_height;
+        }
+
         this.gameState = state;
         
         if (firstUpdate) {
@@ -591,7 +639,9 @@ export class SnakeGame {
             this.graphicsCache.snakeGraphics[i].visible = false;
         }
         for (let i = foodIndex; i < this.graphicsCache.foodGraphics.length; i++) {
-            this.graphicsCache.foodGraphics[i].visible = false;
+            const g = this.graphicsCache.foodGraphics[i];
+            g.visible = false;
+            g._lastStateKey = null;
         }
     }
     
@@ -710,22 +760,30 @@ export class SnakeGame {
      */
     drawAnimalPooled(food, offsetX, offsetY, poolIndex) {
         const graphics = this.getPooledFoodGraphics(poolIndex);
-        graphics.clear();
-        graphics.visible = true;
-        
+
         const baseX = offsetX + food.position.x * this.cellSize;
         const baseY = offsetY + food.position.y * this.cellSize;
         const colors = food.colors || {};
         const type = food.type;
         const cells = food.cells || [[0, 0]];
-        
+
         // Recovery flash: pulsing transparency when animal is in cooldown after being hit
         if (food.recovering && food.hit_recovery > 0) {
-            const flashPhase = Math.sin(Date.now() / 80) * 0.5 + 0.5;  // 0-1 oscillation
-            graphics.alpha = 0.25 + flashPhase * 0.45;  // Range: 0.25 – 0.70
+            const flashPhase = Math.sin(Date.now() / 80) * 0.5 + 0.5;
+            graphics.alpha = 0.25 + flashPhase * 0.45;
         } else {
             graphics.alpha = 1.0;
         }
+
+        // Skip expensive redraw if food visual state is unchanged since last frame
+        const stateKey = `${type}_${food.position.x}_${food.position.y}_${food.health}_${food.recovering ? 1 : 0}_${food.max_health}`;
+        if (graphics._lastStateKey === stateKey) {
+            graphics.visible = true;
+            return poolIndex + 1;
+        }
+        graphics._lastStateKey = stateKey;
+        graphics.clear();
+        graphics.visible = true;
         
         // Draw based on animal category and type
         if (food.category === 'small') {
@@ -1336,14 +1394,36 @@ export class SnakeGame {
         // Update left sidebar standings
         this.hud.updateSidebar(this.gameState.players, this.gameState.mode, barrierMult);
 
-        // Survival mode: show global speed multiplier in sidebar
-        if (this.gameState.mode === 'survival') {
+        // Survival/Duel mode: show global speed multiplier in sidebar
+        if (this.gameState.mode === 'survival' || this.gameState.mode === 'duel') {
             const baseSpeed = 100;
             const currentSpeed = this.gameState.current_speed || baseSpeed;
             const speedMult = baseSpeed / currentSpeed;
             this.hud.updateSurvivalSpeed(speedMult);
         } else {
             this.hud.hideSurvivalPressure();
+        }
+
+        // Duel series bar
+        if (this.gameState.mode === 'duel' && this.gameState.series_length > 0) {
+            this.hud.updateDuelSeriesBar(
+                this.gameState.players,
+                this.gameState.series_scores || {},
+                this.gameState.current_round || 1,
+                this.gameState.series_length
+            );
+        }
+
+        // Show "Leave Game" overlay when current player dies in Survival mode
+        if (this.gameState.mode === 'survival' && this.gameState.running) {
+            const myPlayer = this.gameState.players[this.playerId];
+            const iAmDead = myPlayer && myPlayer.snake && !myPlayer.snake.alive;
+            if (iAmDead && !this._deadOverlayShown) {
+                this._deadOverlayShown = true;
+                this.hud.showDeadOverlay(() => {
+                    if (this.onLeaveGame) this.onLeaveGame();
+                });
+            }
         }
     }
     
@@ -1379,12 +1459,12 @@ export class SnakeGame {
     /**
      * Handle game over
      */
-    onGameOver(winnerId, finalState) {
+    onGameOver(winnerId, finalState, seriesScores = null) {
         this.running = false;
         this.gameState = finalState;
         this.render();
         
-        this.hud.showGameOver(winnerId, finalState.players, finalState.mode);
+        this.hud.showGameOver(winnerId, finalState.players, finalState.mode, seriesScores);
     }
 }
 
