@@ -19,7 +19,10 @@
                 
                 <div class="player-name-section">
                     <label for="player-name">Your Name</label>
-                    <input type="text" id="player-name" maxlength="12" placeholder="Enter name...">
+                    <div class="name-input-row">
+                        <input type="text" id="player-name" maxlength="12" placeholder="Enter name...">
+                        <span id="player-status-label" class="player-status-label hidden"></span>
+                    </div>
                 </div>
                 
                 <div class="game-select-section">
@@ -56,7 +59,7 @@
                     </button>
                 </div>
                 
-                <div class="version-info">v0.3.0</div>
+                <div class="version-info">v0.4.0</div>
             </div>
         </div>
         
@@ -77,10 +80,16 @@
             <div class="modal-content leaderboard-modal">
                 <h2>🏆 Snake Leaderboard — All Time Top 500</h2>
                 <div class="lb-filter-row">
-                    <label class="lb-toggle-label">
-                        <input type="checkbox" id="lb-unique-toggle" />
-                        <span class="lb-toggle-text">Show best score per player only</span>
-                    </label>
+                    <select id="lb-mode-filter" class="lb-mode-select">
+                        <option value="all">All Modes</option>
+                        <option value="survival">Survival</option>
+                        <option value="high_score">High Score</option>
+                        <option value="battle_royale">Battle Royale</option>
+                        <option value="single_player">Solo Practice</option>
+                    </select>
+                    <button id="lb-unique-toggle" class="lb-score-toggle" data-unique="false">
+                        All Scores
+                    </button>
                 </div>
                 <div id="leaderboard-list" class="leaderboard-list">
                     <div class="loading">Loading...</div>
@@ -187,7 +196,8 @@
                 <div class="lobby-buttons">
                     <button id="btn-ready" class="btn btn-primary">Ready</button>
                     <button id="btn-start-game" class="btn btn-success hidden">Start Game</button>
-                    <button id="btn-lobby-leaderboard" class="btn btn-tertiary">🏆 Snake Leaderboard</button>
+                    <button id="btn-lobby-leaderboard" class="btn btn-tertiary">🏆 Leaderboard</button>
+                    <button id="btn-lobby-profile" class="btn btn-tertiary">👤 My Profile</button>
                     <button id="btn-leave-room" class="btn btn-danger">Leave</button>
                 </div>
             </div>
@@ -245,6 +255,24 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen hidden">
             <div id="game-wrapper">
+                <!-- Left: player standings -->
+                <div id="player-sidebar" class="legend-panel">
+                    <div class="legend-title">🎮 Players</div>
+                    <div id="global-multipliers" class="global-mults hidden">
+                        <div id="mult-speed" class="mult-row hidden">
+                            <span class="mult-icon">⚡</span>
+                            <span id="mult-speed-val" class="mult-val">1.00×</span>
+                            <span class="mult-label">Speed</span>
+                        </div>
+                        <div id="mult-barrier" class="mult-row hidden">
+                            <span class="mult-icon">🧱</span>
+                            <span id="mult-barrier-val" class="mult-val">1.0×</span>
+                            <span class="mult-label">Points</span>
+                        </div>
+                    </div>
+                    <div id="player-standings"></div>
+                </div>
+
                 <div id="game-container">
                     <canvas id="game-canvas"></canvas>
                 </div>
@@ -331,6 +359,56 @@
             </div>
         </div>
         
+        <!-- Profile Modal -->
+        <div id="profile-modal" class="modal hidden">
+            <div class="modal-content profile-modal">
+                <h2>👤 Player Profile</h2>
+                <div id="profile-name-header" class="profile-name-header"></div>
+
+                <div class="profile-filter-row">
+                    <label class="lb-toggle-label">
+                        <input type="checkbox" id="profile-ai-toggle" />
+                        <span class="lb-toggle-text">Include AI-only games</span>
+                    </label>
+                </div>
+
+                <div id="profile-stats" class="profile-stats">
+                    <div class="profile-stat-row">
+                        <span class="stat-label">Total Games</span>
+                        <span id="stat-total-games" class="stat-value">—</span>
+                    </div>
+                    <div class="profile-stat-row">
+                        <span class="stat-label">Total Wins</span>
+                        <span id="stat-total-wins" class="stat-value">—</span>
+                    </div>
+                    <div class="profile-stat-row">
+                        <span class="stat-label">Win Rate</span>
+                        <span id="stat-win-pct" class="stat-value">—</span>
+                    </div>
+                    <div class="profile-stat-row profile-stat-divider">
+                        <span class="stat-label" style="font-weight:600;color:var(--text-secondary)">By Game Mode</span>
+                    </div>
+                    <div id="profile-mode-stats"></div>
+                    <div class="profile-stat-row profile-stat-divider">
+                        <span class="stat-label" style="font-weight:600;color:var(--text-secondary)">Best Scores</span>
+                    </div>
+                    <div id="profile-best-scores"></div>
+                </div>
+
+                <div id="profile-no-data" class="profile-no-data hidden">
+                    <p>No games recorded yet.</p>
+                    <p>Play your first game to start building your profile!</p>
+                </div>
+
+                <div class="profile-registered-date" id="profile-registered-date"></div>
+
+                <div class="modal-buttons">
+                    <button id="btn-profile-reset" class="btn btn-danger btn-sm">Reset Stats</button>
+                    <button id="btn-profile-close" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Connection Status -->
         <div id="connection-status" class="connection-indicator disconnected">
             <span class="status-dot"></span>

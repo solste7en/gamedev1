@@ -44,12 +44,14 @@ export class Menu {
         this.btnLbNext = document.getElementById('btn-lb-next');
         this.lbPageInfo = document.getElementById('lb-page-info');
         
-        // Leaderboard pagination state
+        // Leaderboard filter state
         this._lbEntries = [];
         this._lbPage = 0;
         this._lbPageSize = 50;
         this._lbShowUnique = false;
+        this._lbModeFilter = 'all';
         this.lbUniqueToggle = document.getElementById('lb-unique-toggle');
+        this.lbModeFilter = document.getElementById('lb-mode-filter');
         
         // Lists
         this.roomList = document.getElementById('room-list');
@@ -81,9 +83,18 @@ export class Menu {
             if (this._lbPage < maxPage) { this._lbPage++; this._renderLeaderboardPage(); }
         });
         if (this.lbUniqueToggle) {
-            this.lbUniqueToggle.addEventListener('change', (e) => {
-                this._lbShowUnique = e.target.checked;
-                this._lbPage = 0;  // Reset to first page on filter change
+            this.lbUniqueToggle.addEventListener('click', () => {
+                this._lbShowUnique = !this._lbShowUnique;
+                this.lbUniqueToggle.dataset.unique = this._lbShowUnique;
+                this.lbUniqueToggle.textContent = this._lbShowUnique ? 'Best per Player' : 'All Scores';
+                this._lbPage = 0;
+                this._renderLeaderboardPage();
+            });
+        }
+        if (this.lbModeFilter) {
+            this.lbModeFilter.addEventListener('change', () => {
+                this._lbModeFilter = this.lbModeFilter.value;
+                this._lbPage = 0;
                 this._renderLeaderboardPage();
             });
         }
@@ -353,7 +364,7 @@ export class Menu {
             if (this.leaderboardPagination) this.leaderboardPagination.classList.add('hidden');
             return;
         }
-        
+
         this._lbEntries = entries;
         this._lbPage = 0;
         if (this.leaderboardPagination) this.leaderboardPagination.classList.remove('hidden');
@@ -361,18 +372,27 @@ export class Menu {
     }
     
     /**
-     * Return entries filtered by the current toggle state
+     * Return entries filtered by mode and unique-player toggle
      */
     _getFilteredEntries() {
-        if (!this._lbShowUnique) return this._lbEntries;
-        // Keep only the highest score per unique player name (already sorted desc)
-        const seen = new Set();
-        return this._lbEntries.filter(e => {
-            const key = e.player_name.toLowerCase().trim();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        // Step 1: mode filter
+        let entries = this._lbEntries;
+        if (this._lbModeFilter && this._lbModeFilter !== 'all') {
+            entries = entries.filter(e => e.game_mode === this._lbModeFilter);
+        }
+
+        // Step 2: unique-player filter (keep only top score per name)
+        if (this._lbShowUnique) {
+            const seen = new Set();
+            entries = entries.filter(e => {
+                const key = e.player_name.toLowerCase().trim();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        return entries;
     }
     
     /**

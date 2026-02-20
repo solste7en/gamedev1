@@ -12,6 +12,7 @@ from .room_manager import RoomManager, Room
 from .game_manager import GameManager
 from .brawler_game_manager import BrawlerGameManager
 from .leaderboard import get_leaderboard_manager
+from .profiles import get_profile_manager
 
 
 class ConnectionManager:
@@ -101,6 +102,15 @@ class ConnectionManager:
         
         elif msg_type == "submit_score":
             await self._handle_submit_score(websocket, data)
+
+        elif msg_type == "get_profile":
+            await self._handle_get_profile(websocket, data)
+
+        elif msg_type == "reset_profile":
+            await self._handle_reset_profile(websocket, data)
+
+        elif msg_type == "register_player":
+            await self._handle_register_player(websocket, data)
         
         # Brawler-specific messages
         elif msg_type == "select_team":
@@ -422,6 +432,43 @@ class ConnectionManager:
             "leaderboard": leaderboard.get_leaderboard()
         })
     
+    async def _handle_get_profile(self, websocket: WebSocket, data: dict):
+        """Return a player's profile stats"""
+        player_name = data.get("player_name", "")
+        mgr = get_profile_manager()
+        profile = mgr.get_profile(player_name)
+        await self.send_personal(websocket, {
+            "type": "profile_data",
+            "player_name": player_name,
+            "exists": profile is not None,
+            "profile": profile.to_dict() if profile else None,
+        })
+
+    async def _handle_reset_profile(self, websocket: WebSocket, data: dict):
+        """Reset a player's stats"""
+        player_name = data.get("player_name", "")
+        mgr = get_profile_manager()
+        success = mgr.reset_profile(player_name)
+        profile = mgr.get_profile(player_name)
+        await self.send_personal(websocket, {
+            "type": "profile_reset",
+            "success": success,
+            "profile": profile.to_dict() if profile else None,
+        })
+
+    async def _handle_register_player(self, websocket: WebSocket, data: dict):
+        """Ensure a profile exists (called when player first enters a lobby)"""
+        player_name = data.get("player_name", "")
+        if player_name and len(player_name) >= 2:
+            mgr = get_profile_manager()
+            profile = mgr.ensure_profile(player_name)
+            await self.send_personal(websocket, {
+                "type": "profile_data",
+                "player_name": player_name,
+                "exists": True,
+                "profile": profile.to_dict(),
+            })
+
     # Brawler-specific handlers
     
     async def _handle_select_team(self, player_id: int, data: dict):

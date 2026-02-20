@@ -19,12 +19,20 @@ export class HUD {
         this.gameOverTitle = document.getElementById('game-over-title');
         this.finalScores = document.getElementById('final-scores');
         this.btnBackLobby = document.getElementById('btn-back-lobby');
-        
+
         // Survival pressure indicators
         this.survivalPressure = document.getElementById('survival-pressure');
         this.decayBarFill = document.getElementById('decay-bar-fill');
         this.decayLabel = document.getElementById('decay-label');
         this.speedIndicator = document.getElementById('speed-indicator');
+
+        // Left sidebar
+        this.playerStandings   = document.getElementById('player-standings');
+        this.globalMultipliers = document.getElementById('global-multipliers');
+        this.multSpeedRow = document.getElementById('mult-speed');
+        this.multSpeedVal = document.getElementById('mult-speed-val');
+        this.multBarrierRow = document.getElementById('mult-barrier');
+        this.multBarrierVal = document.getElementById('mult-barrier-val');
     }
     
     /**
@@ -62,43 +70,77 @@ export class HUD {
     }
     
     /**
-     * Update scoreboard display, including respawn countdown for dead players
+     * Update scoreboard display (legacy, no-op — replaced by sidebar)
      */
     updateScoreboard(players) {
-        this.scoreboard.innerHTML = '';
-        
+        // Delegated to updateSidebar()
+    }
+
+    /**
+     * Update the left player-sidebar standings list.
+     * @param {Object} players  - gameState.players dict
+     * @param {string} mode     - game mode string
+     * @param {number} barrierMult - points multiplier from barriers (0 = hide)
+     */
+    updateSidebar(players, mode, barrierMult = 0) {
+        if (!this.playerStandings) return;
+
         // Sort by score descending
         const sorted = Object.values(players).sort((a, b) => {
             const scoreA = a.snake ? a.snake.score : 0;
             const scoreB = b.snake ? b.snake.score : 0;
             return scoreB - scoreA;
         });
-        
-        sorted.forEach(player => {
-            const item = document.createElement('div');
-            item.className = 'score-item';
-            
-            const color = player.snake ? player.snake.color : '#FFFFFF';
-            const score = player.snake ? player.snake.score : 0;
-            const alive = player.snake ? player.snake.alive : false;
-            const respawnRemaining = player.respawn_remaining || 0;
-            const deathCount = player.death_count || 0;
-            
-            let statusSuffix = '';
-            if (!alive && respawnRemaining > 0) {
-                statusSuffix = `<span class="respawn-countdown">↺ ${respawnRemaining.toFixed(1)}s</span>`;
-            } else if (!alive && deathCount > 0) {
-                statusSuffix = `<span class="respawn-countdown respawn-ready">↺</span>`;
+
+        this.playerStandings.innerHTML = '';
+
+        sorted.forEach((player, idx) => {
+            const color  = player.snake ? player.snake.color : '#FFFFFF';
+            const score  = player.snake ? player.snake.score : 0;
+            const alive  = player.snake ? player.snake.alive : false;
+            const respawn = player.respawn_remaining || 0;
+            const decayTimer   = player.snake ? (player.snake.decay_timer ?? null) : null;
+            const spawnFreeze  = player.snake ? (player.snake.spawn_freeze ?? 0) : 0;
+            const isAI = player.is_ai || false;
+
+            let subHtml = '';
+            if (!alive && respawn > 0) {
+                subHtml = `<span class="respawn-cd">↺ ${respawn.toFixed(1)}s</span>`;
+            } else if (spawnFreeze > 0) {
+                subHtml = `<span class="respawn-cd">● ${spawnFreeze.toFixed(1)}s</span>`;
+            } else if (mode === 'survival' && alive && decayTimer !== null) {
+                const ratio = Math.min(1, Math.max(0, decayTimer / 6));
+                const barColor = ratio > 0.5 ? '#22C55E' : ratio > 0.25 ? '#F59E0B' : '#EF4444';
+                const barWidth = Math.round(ratio * 40);
+                subHtml = `<span class="decay-bar" style="width:${barWidth}px;background:${barColor}"></span>🍽 ${decayTimer.toFixed(1)}s`;
             }
-            
+
+            const aiTag = isAI ? ` <span style="font-size:8px;opacity:.5">AI</span>` : '';
+
+            const item = document.createElement('div');
+            item.className = 'standing-item';
             item.innerHTML = `
-                <div class="score-color" style="background-color: ${color}; opacity: ${alive ? 1 : 0.4}"></div>
-                <span class="score-name" style="opacity: ${alive ? 1 : 0.4}">${player.name}</span>
-                <span class="score-value">${score}${statusSuffix}</span>
+                <span class="standing-rank">#${idx + 1}</span>
+                <span class="standing-color" style="background:${color};opacity:${alive ? 1 : 0.4}"></span>
+                <span class="standing-info">
+                    <span class="standing-name${alive ? '' : ' dead'}">${player.name}${aiTag}</span>
+                    ${subHtml ? `<span class="standing-sub">${subHtml}</span>` : ''}
+                </span>
+                <span class="standing-score" style="opacity:${alive ? 1 : 0.6}">${score}</span>
             `;
-            
-            this.scoreboard.appendChild(item);
+            this.playerStandings.appendChild(item);
         });
+
+        // Barrier multiplier row (show only when > 1)
+        if (this.multBarrierRow && this.multBarrierVal) {
+            if (barrierMult > 1.0) {
+                this.multBarrierRow.classList.remove('hidden');
+                this.multBarrierVal.textContent = `${barrierMult.toFixed(1)}×`;
+                if (this.globalMultipliers) this.globalMultipliers.classList.remove('hidden');
+            } else {
+                this.multBarrierRow.classList.add('hidden');
+            }
+        }
     }
     
     /**
@@ -203,25 +245,24 @@ export class HUD {
     }
 
     /**
-     * Show global speed multiplier in the HUD (Survival mode).
+     * Show global speed multiplier in the sidebar and HUD.
      * Per-player decay/hunger bars are rendered directly on the game canvas.
      * @param {number} speedMult - Current speed multiplier (1.0 = normal)
      */
     updateSurvivalSpeed(speedMult) {
-        if (!this.survivalPressure) return;
-        this.survivalPressure.classList.remove('hidden');
-
-        // Hide the per-player decay bar row (it's now drawn per-quadrant in-canvas)
-        if (this.decayBarFill) {
-            const decayRow = this.decayBarFill.closest('.sp-row');
-            if (decayRow) decayRow.style.display = 'none';
+        // Legacy HUD element (keep hidden as sidebar takes over)
+        if (this.survivalPressure) {
+            this.survivalPressure.classList.add('hidden');
         }
 
-        this.speedIndicator.textContent = `${speedMult.toFixed(2)}×`;
-
-        // Tint the speed indicator when noticeably fast
-        this.speedIndicator.style.color = speedMult >= 1.5 ? 'var(--danger)' :
-                                           speedMult >= 1.25 ? 'var(--warning)' : '';
+        // Sidebar speed row
+        if (this.multSpeedRow && this.multSpeedVal) {
+            this.multSpeedRow.classList.remove('hidden');
+            this.multSpeedVal.textContent = `${speedMult.toFixed(2)}×`;
+            this.multSpeedVal.className = 'mult-val' +
+                (speedMult >= 1.5 ? ' fast' : speedMult >= 1.25 ? ' medium-fast' : '');
+            if (this.globalMultipliers) this.globalMultipliers.classList.remove('hidden');
+        }
     }
 
     /**
@@ -231,6 +272,7 @@ export class HUD {
         if (this.survivalPressure) {
             this.survivalPressure.classList.add('hidden');
         }
+        if (this.multSpeedRow) this.multSpeedRow.classList.add('hidden');
     }
 
     /**
@@ -239,7 +281,11 @@ export class HUD {
     reset() {
         this.timer.textContent = '0:00';
         this.timer.style.color = '';
-        this.scoreboard.innerHTML = '';
+        if (this.scoreboard) this.scoreboard.innerHTML = '';
+        if (this.playerStandings) this.playerStandings.innerHTML = '';
+        if (this.globalMultipliers) this.globalMultipliers.classList.add('hidden');
+        if (this.multBarrierRow) this.multBarrierRow.classList.add('hidden');
+        if (this.multSpeedRow) this.multSpeedRow.classList.add('hidden');
         this.hideCountdown();
         this.hideGameOver();
         this.hideSurvivalPressure();

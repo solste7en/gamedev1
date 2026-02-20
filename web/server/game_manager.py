@@ -17,6 +17,7 @@ from .models import (
     FOOD_HIT_RECOVERY
 )
 from .room_manager import Room
+from .profiles import get_profile_manager
 
 
 # AI name pool — top soccer players from 2000 onward
@@ -1481,6 +1482,29 @@ class GameManager:
             if elapsed < tick_rate:
                 await asyncio.sleep(tick_rate - elapsed)
         
+        # Record profile stats for every human player
+        try:
+            profile_mgr = get_profile_manager()
+            human_players = [p for p in self.state.players.values() if not p.is_ai]
+            vs_ai_only = all(p.is_ai for p in self.state.players.values()
+                             if p.id not in [hp.id for hp in human_players])
+            for player in human_players:
+                score = player.snake.score if player.snake else 0
+                is_winner = (player.id == self.state.winner_id)
+                # vs_ai_only = true when all OTHER players are AI
+                others_are_all_ai = all(
+                    p.is_ai for p in self.state.players.values() if p.id != player.id
+                )
+                profile_mgr.record_game(
+                    player_name=player.name,
+                    is_winner=is_winner,
+                    score=score,
+                    game_mode=self.state.mode.value,
+                    vs_ai_only=others_are_all_ai,
+                )
+        except Exception:
+            pass  # Never let profile recording crash the game loop
+
         # Send game over
         await self.broadcast({
             "type": "game_over",

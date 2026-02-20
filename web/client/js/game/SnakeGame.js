@@ -171,7 +171,9 @@ export class SnakeGame {
         this.graphicsCache.snakeGraphics = [];
         this.graphicsCache.foodGraphics.forEach(g => g.destroy());
         this.graphicsCache.foodGraphics = [];
-        this.graphicsCache.textObjects.forEach(t => t.destroy());
+        this.graphicsCache.textObjects.forEach(t => {
+            if (t && typeof t.destroy === 'function') t.destroy();
+        });
         this.graphicsCache.textObjects.clear();
         this.graphicsCache.decayBarGraphics.forEach(g => g.destroy());
         this.graphicsCache.decayBarGraphics.clear();
@@ -331,22 +333,61 @@ export class SnakeGame {
             const color = player.snake ? player.snake.color : '#FFFFFF';
             const isAlive = player.snake ? player.snake.alive : false;
             
-            // Update player name text (cached)
+            // Update player name label inside each quadrant (fixed-width background pill)
             const quadrantX = contentOffsetX + bounds.x_min * this.cellSize;
             const quadrantY = contentOffsetY + bounds.y_min * this.cellSize;
             const quadrantWidth = (bounds.x_max - bounds.x_min) * this.cellSize;
-            
+
+            // Fixed-width background pill for the name header
+            const pillKey = `pill_${playerId}`;
+            let pillG = this.graphicsCache.textObjects.get(pillKey + '_bg');
+            if (!pillG) {
+                pillG = new PIXI.Graphics();
+                this.renderer.gameContainer.addChild(pillG);
+                this.graphicsCache.textObjects.set(pillKey + '_bg', pillG);
+            }
+            const pillW = 100;
+            const pillH = 16;
+            const pillX = quadrantX + quadrantWidth / 2 - pillW / 2;
+            const pillY = quadrantY + 2;
+            pillG.clear();
+            pillG.beginFill(0x0F172A, 0.75);
+            pillG.drawRoundedRect(pillX, pillY, pillW, pillH, 4);
+            pillG.endFill();
+            pillG.visible = true;
+
             this.updateCachedText(
                 `name_${playerId}`,
-                `${player.name}${!isAlive ? ' (DEAD)' : ''}`,
+                `${player.name}${!isAlive ? ' ✝' : ''}`,
                 quadrantX + quadrantWidth / 2,
                 quadrantY + 10,
                 {
-                    fontSize: 12,
+                    fontSize: 11,
                     fill: this.parseColor(color),
                     fontWeight: 'bold'
                 }
             );
+
+            // Name tag above snake head during spawn freeze (countdown + respawn)
+            const spawnFreeze = player.snake ? (player.snake.spawn_freeze || 0) : 0;
+            if (player.snake && spawnFreeze > 0) {
+                const head = player.snake.body[0];
+                if (head) {
+                    const tagX = contentOffsetX + head.x * this.cellSize + this.cellSize / 2;
+                    const tagY = contentOffsetY + head.y * this.cellSize - 14;
+                    this.updateCachedText(
+                        `spawntag_${playerId}`,
+                        player.name,
+                        tagX,
+                        tagY,
+                        { fontSize: 10, fill: this.parseColor(color), fontWeight: 'bold' }
+                    );
+                } else {
+                    this.hideCachedText(`spawntag_${playerId}`);
+                }
+            } else {
+                this.hideCachedText(`spawntag_${playerId}`);
+            }
             
             // Per-player hunger (decay) bar in Survival mode
             if (this.gameState.mode === 'survival') {
@@ -1281,19 +1322,23 @@ export class SnakeGame {
      */
     updateHUD() {
         if (!this.gameState) return;
-        
+
         this.hud.updateTimer(
             this.gameState.elapsed_time,
             this.gameState.time_limit,
             this.gameState.mode
         );
-        
-        this.hud.updateScoreboard(this.gameState.players);
 
-        // Survival mode: show global speed multiplier in HUD.
-        // Per-player decay bars are drawn in-canvas by _drawPlayerDecayBar().
+        // Barrier points multiplier
+        const barrierMults = { none: 1.0, sparse: 1.25, moderate: 1.5, dense: 2.0 };
+        const barrierMult = barrierMults[this.gameState.barrier_density] || 1.0;
+
+        // Update left sidebar standings
+        this.hud.updateSidebar(this.gameState.players, this.gameState.mode, barrierMult);
+
+        // Survival mode: show global speed multiplier in sidebar
         if (this.gameState.mode === 'survival') {
-            const baseSpeed = 100; // ms
+            const baseSpeed = 100;
             const currentSpeed = this.gameState.current_speed || baseSpeed;
             const speedMult = baseSpeed / currentSpeed;
             this.hud.updateSurvivalSpeed(speedMult);

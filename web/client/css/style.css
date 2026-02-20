@@ -714,25 +714,28 @@ body {
 }
 
 #game-wrapper {
+    position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
     width: 100%;
     height: 100%;
-    gap: 16px;
 }
 
 #game-container {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-shrink: 0;
+    /* Canvas is always the anchor — sidebars are absolutely positioned and never move it */
 }
 
 #game-canvas {
     display: block;
 }
 
-/* Animal Legend Panel */
+/* Animal Legend Panel — both side panels are absolutely positioned so they
+   never affect the flex layout of the canvas and cannot cause it to shift. */
 .legend-panel {
     background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(100, 116, 139, 0.4);
@@ -741,8 +744,24 @@ body {
     width: 180px;
     font-size: 11px;
     line-height: 1.4;
-    align-self: center;
-    flex-shrink: 0;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    max-height: 90vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-light) transparent;
+}
+
+/* Animal legend sits on the right */
+#animal-legend {
+    right: 16px;
+}
+
+/* Player sidebar sits on the left */
+#player-sidebar {
+    left: 16px;
 }
 
 .legend-panel.hidden {
@@ -1405,33 +1424,52 @@ select:focus-visible {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 4px 4px;
+    padding: 8px 4px 8px;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 4px;
 }
 
-.lb-toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
-}
-
-.lb-toggle-label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--primary);
-    cursor: pointer;
-}
-
-.lb-toggle-text {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-
-.lb-toggle-label:hover .lb-toggle-text {
+/* Mode filter dropdown */
+.lb-mode-select {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
     color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.lb-mode-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+/* All Scores / Best per Player toggle button */
+.lb-score-toggle {
+    padding: 6px 12px;
+    border-radius: var(--border-radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    background: var(--bg-medium);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.lb-score-toggle:hover {
+    border-color: var(--primary-light);
+    color: var(--text-primary);
+}
+
+.lb-score-toggle[data-unique="true"] {
+    background: rgba(79, 70, 229, 0.2);
+    border-color: var(--primary);
+    color: var(--primary-light);
 }
 
 /* Pagination */
@@ -1840,4 +1878,276 @@ select:focus-visible {
     .player-list {
         grid-template-columns: 1fr;
     }
+}
+
+/* ============================================================
+   Player name status label (home page)
+   ============================================================ */
+.name-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.name-input-row input {
+    flex: 1;
+}
+
+.player-status-label {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+    transition: var(--transition);
+}
+
+.player-status-label.new-player {
+    background: rgba(34, 197, 94, 0.15);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #22C55E;
+}
+
+.player-status-label.existing-player {
+    background: rgba(79, 70, 229, 0.15);
+    border: 1px solid rgba(79, 70, 229, 0.4);
+    color: #818CF8;
+}
+
+.player-status-label.hidden {
+    display: none;
+}
+
+/* ============================================================
+   Player sidebar (left panel, symmetric to animal legend)
+   — positioning handled by .legend-panel + #player-sidebar above
+   ============================================================ */
+
+/* Global multipliers inside sidebar */
+.global-mults {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.global-mults.hidden {
+    display: none;
+}
+
+.mult-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+.mult-row.hidden {
+    display: none;
+}
+
+.mult-icon {
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+}
+
+.mult-val {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #F1F5F9;
+    min-width: 52px;
+}
+
+.mult-val.fast {
+    color: #EF4444;
+}
+
+.mult-val.medium-fast {
+    color: #F59E0B;
+}
+
+.mult-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Player standings rows */
+.standing-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+    font-size: 11px;
+}
+
+.standing-item:last-child {
+    border-bottom: none;
+}
+
+.standing-rank {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    width: 14px;
+    flex-shrink: 0;
+}
+
+.standing-color {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.standing-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.standing-name {
+    font-weight: 600;
+    color: #F1F5F9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+    display: block;
+}
+
+.standing-name.dead {
+    opacity: 0.45;
+}
+
+.standing-score {
+    font-size: 12px;
+    font-weight: 700;
+    color: #F59E0B;
+    flex-shrink: 0;
+}
+
+.standing-sub {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    white-space: nowrap;
+}
+
+.standing-sub .respawn-cd {
+    color: #60A5FA;
+}
+
+.standing-sub .decay-bar {
+    display: inline-block;
+    height: 5px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 3px;
+}
+
+/* ============================================================
+   Scoreboard — hide the old hud scoreboard (replaced by sidebar)
+   ============================================================ */
+#scoreboard {
+    display: none !important;
+}
+
+/* ============================================================
+   Profile Modal
+   ============================================================ */
+.profile-modal {
+    max-width: 480px;
+    width: 95%;
+}
+
+.profile-name-header {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--primary-light);
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.profile-filter-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.profile-stats {
+    margin-bottom: 16px;
+}
+
+.profile-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+    font-size: 13px;
+}
+
+.profile-stat-divider {
+    margin-top: 8px;
+    border-bottom: none;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+}
+
+.stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.stat-value.highlight {
+    color: #F59E0B;
+}
+
+.profile-mode-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0 4px 8px;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.08);
+    font-size: 12px;
+}
+
+.profile-mode-label {
+    color: var(--text-secondary);
+}
+
+.profile-mode-val {
+    color: var(--text-primary);
+    font-size: 11px;
+}
+
+.profile-no-data {
+    text-align: center;
+    padding: 24px 0;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.profile-no-data.hidden {
+    display: none;
+}
+
+.profile-registered-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+/* Reset button confirmation state */
+#btn-profile-reset.confirm {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
 }

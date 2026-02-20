@@ -17,6 +17,7 @@ except ImportError:
     _WSConnectionClosedError = None
 
 from .websocket import connection_manager
+from .profiles import get_profile_manager
 
 
 VERSION = "0.4.0"
@@ -54,6 +55,14 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": VERSION}
+
+
+@app.get("/profile/{player_name}")
+async def get_profile(player_name: str):
+    """Return profile data for a player name (used for New/Existing check)"""
+    mgr = get_profile_manager()
+    profile = mgr.get_profile(player_name)
+    return {"exists": profile is not None, "profile": profile.to_dict() if profile else None}
 
 
 @app.websocket("/ws")
@@ -99,22 +108,68 @@ def get_local_ip():
         return "127.0.0.1"
 
 
+def _find_ssl_certs():
+    """
+    Look for mkcert-generated cert files next to this script and in CWD.
+    Returns (certfile, keyfile) paths or (None, None) if not found.
+
+    Run these commands once to generate the files:
+        sudo mkcert -install           # installs local CA into browser trust store
+        mkcert localhost 127.0.0.1 <your-LAN-IP>
+    The generated files are named  localhost+2.pem / localhost+2-key.pem
+    (the +2 suffix indicates two extra SANs were added).
+    """
+    search_dirs = [
+        Path(__file__).parent.parent.parent,  # project root
+        Path.cwd(),
+    ]
+    patterns = [
+        ("localhost+2.pem", "localhost+2-key.pem"),
+        ("localhost+1.pem", "localhost+1-key.pem"),
+        ("localhost.pem",   "localhost-key.pem"),
+        ("cert.pem",        "key.pem"),
+    ]
+    for d in search_dirs:
+        for cert_name, key_name in patterns:
+            cert = d / cert_name
+            key  = d / key_name
+            if cert.exists() and key.exists():
+                return str(cert), str(key)
+    return None, None
+
+
 def main():
     """Run the server"""
     host = "0.0.0.0"  # Listen on all interfaces
     port = 8000
-    
+
     local_ip = get_local_ip()
-    
+    ssl_certfile, ssl_keyfile = _find_ssl_certs()
+    scheme = "https" if ssl_certfile else "http"
+    ws_scheme = "wss" if ssl_certfile else "ws"
+
     print("\n" + "=" * 60)
     print(f"  🐍 Snake Multiplayer Server v{VERSION}")
     print("=" * 60)
-    print(f"\n  Local URL:    http://localhost:{port}")
-    print(f"  Network URL:  http://{local_ip}:{port}")
+    print(f"\n  Local URL:    {scheme}://localhost:{port}")
+    print(f"  Network URL:  {scheme}://{local_ip}:{port}")
+    if ssl_certfile:
+        print(f"\n  🔒 HTTPS enabled  ({Path(ssl_certfile).name})")
+    else:
+        print("\n  ⚠  Running over HTTP (no SSL certs found).")
+        print("     To enable HTTPS, run once in the project root:")
+        print("       sudo mkcert -install")
+        print(f"       mkcert localhost 127.0.0.1 {local_ip}")
+        print("     Then restart the server.")
     print("\n  Share the Network URL with friends on the same network!")
     print("=" * 60 + "\n")
-    
-    uvicorn.run(app, host=host, port=port, log_level="info")
+
+    kwargs = dict(host=host, port=port, log_level="info")
+    if ssl_certfile:
+        kwargs["ssl_certfile"] = ssl_certfile
+        kwargs["ssl_keyfile"]  = ssl_keyfile
+
+    uvicorn.run(app, **kwargs)
 
 
 if __name__ == "__main__":
