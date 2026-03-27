@@ -493,12 +493,12 @@ ANIMAL_TYPES = {
     },
     "bug": {
         "value": 65, "health": 1, "size": 1, "weight": 30,
-        "colors": {"body": "#8B4513", "shell": "#A0522D", "legs": "#654321"},
+        "colors": {"body": "#A0522D", "shell": "#C06030", "legs": "#7A4020"},
         "cells": [(0, 0)], "category": "small"
     },
     "cricket": {
         "value": 65, "health": 1, "size": 1, "weight": 25,
-        "colors": {"body": "#553723", "legs": "#3C2819"},
+        "colors": {"body": "#8B6040", "legs": "#6B4830"},
         "cells": [(0, 0)], "category": "small"
     },
     "worm": {
@@ -513,7 +513,7 @@ ANIMAL_TYPES = {
     },
     "spider": {
         "value": 70, "health": 1, "size": 1, "weight": 20,
-        "colors": {"body": "#282828", "legs": "#1E1E1E", "eye": "#FF0000"},
+        "colors": {"body": "#5A5A6E", "legs": "#3E3E4E", "eye": "#FF0000"},
         "cells": [(0, 0)], "category": "small"
     },
     "bee": {
@@ -595,7 +595,7 @@ ANIMAL_TYPES = {
     },
     "bear": {
         "value": 280, "health": 5, "size": 6, "weight": 4,   # 56 pts/hit × 5
-        "colors": {"body": "#644632", "snout": "#8C6446", "belly": "#785A46", "eye": "#1E1914"},
+        "colors": {"body": "#8C6448", "snout": "#AA7A5A", "belly": "#9A7260", "eye": "#1E1914"},
         "cells": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2)], "category": "huge"
     },
     "crocodile": {
